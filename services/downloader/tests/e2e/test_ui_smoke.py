@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from pathlib import Path
 
 import pytest
 import uvicorn
@@ -76,6 +77,7 @@ def test_paste_url_choose_mode_and_get_the_file(server, page, mode, ext):
     with page.expect_download(timeout=10000) as download:
         page.click("#download")
     assert download.value.suggested_filename == f"clip.{ext}"
+    assert Path(download.value.path()).read_bytes() == b"data"
     assert "Listo" in page.inner_text("#status")
 
 
