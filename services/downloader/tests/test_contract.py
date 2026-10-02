@@ -39,7 +39,7 @@ def client(tmp_path):
         url_validator=lambda u: u,
         serve_web=False,
     )
-    yield TestClient(app)
+    yield TestClient(app, base_url="http://127.0.0.1")
     manager.shutdown()
 
 
@@ -72,7 +72,7 @@ def test_error_body_validates_against_committed_schema(tmp_path):
 
     manager = JobManager(tmp_path / "jobs", lambda job, cb: job.dir)
     app = create_app(manager=manager, info_fetcher=failing, url_validator=lambda u: u, serve_web=False)
-    res = TestClient(app).post("/api/info", json={"url": "https://example.com/v"})
+    res = TestClient(app, base_url="http://127.0.0.1").post("/api/info", json={"url": "https://example.com/v"})
     assert res.status_code == 400
     validate(res.json(), "ErrorBody")
     manager.shutdown()

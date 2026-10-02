@@ -35,8 +35,9 @@ def make_client(tmp_path):
             info_fetcher=overrides.get("info_fetcher", fake_info),
             url_validator=overrides.get("url_validator", lambda u: u),
             serve_web=False,
+            **({"allowed_hosts": overrides["allowed_hosts"]} if "allowed_hosts" in overrides else {}),
         )
-        return TestClient(app)
+        return TestClient(app, base_url="http://127.0.0.1")
 
     yield _make
     for manager in managers:
@@ -96,6 +97,56 @@ def test_info_unexpected_exception_never_leaks_url_to_log_or_body(make_client, c
         assert leaked not in caplog.text
         assert leaked not in res.text
     assert "RuntimeError" in caplog.text
+
+
+INFO_BODY = {"url": "https://example.com/v"}
+
+
+@pytest.mark.parametrize("method, path", [("get", "/api/health"), ("post", "/api/info")])
+def test_foreign_host_header_is_403(make_client, method, path):
+    kwargs = {"json": INFO_BODY} if method == "post" else {}
+    res = getattr(make_client(), method)(path, headers={"Host": "evil.example"}, **kwargs)
+    assert res.status_code == 403
+    assert res.json() == {"detail": "host not allowed"}
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1:8765", "localhost", "LOCALHOST:1", "[::1]:8000", "127.0.0.1"])
+def test_loopback_host_headers_are_accepted(make_client, host):
+    assert make_client().get("/api/health", headers={"Host": host}).status_code == 200
+
+
+def test_cross_origin_post_is_403(make_client):
+    res = make_client().post("/api/info", json=INFO_BODY, headers={"Origin": "http://evil.example"})
+    assert res.status_code == 403
+    assert res.json() == {"detail": "origin not allowed"}
+
+
+def test_cross_origin_job_creation_is_403_and_creates_nothing(make_client):
+    res = make_client().post(
+        "/api/jobs", json={**INFO_BODY, "mode": "video"}, headers={"Origin": "https://evil.example:8765"}
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.parametrize("headers", [{"Origin": "http://127.0.0.1:8765"}, {"Origin": "http://localhost"}, {}])
+def test_same_origin_or_missing_origin_post_is_accepted(make_client, headers):
+    assert make_client().post("/api/info", json=INFO_BODY, headers=headers).status_code == 200
+
+
+def test_origin_is_not_checked_on_get(make_client):
+    res = make_client().get("/api/health", headers={"Origin": "http://evil.example"})
+    assert res.status_code == 200
+
+
+def test_null_origin_post_is_403(make_client):
+    assert make_client().post("/api/info", json=INFO_BODY, headers={"Origin": "null"}).status_code == 403
+
+
+def test_custom_allowed_hosts_are_honored(make_client):
+    client = make_client(allowed_hosts=("vd.test",))
+    assert client.get("/api/health", headers={"Host": "vd.test:80"}).status_code == 200
+    assert client.get("/api/health", headers={"Host": "127.0.0.1"}).status_code == 403
+    assert client.post("/api/info", json=INFO_BODY, headers={"Host": "vd.test", "Origin": "http://vd.test"}).status_code == 200
 
 
 @pytest.mark.parametrize("bad", ["youtube.com/watch?v=1", "", "ftp://x.com/a", "https://exa mple.com/"])

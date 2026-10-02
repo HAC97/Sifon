@@ -6,9 +6,10 @@ import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable, Literal
+from urllib.parse import urlsplit
 
 import yt_dlp.version
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -71,11 +72,34 @@ class ErrorBody(BaseModel):
     error_message: str
 
 
+DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _hostname_of_host_header(value: str) -> str:
+    """'LocalHost:8000' -> 'localhost', '[::1]:8000' -> '[::1]'."""
+    value = value.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[: end + 1] if end != -1 else value
+    return value.split(":", 1)[0]
+
+
+def _hostname_of_origin(origin: str) -> str:
+    """'http://127.0.0.1:8765' -> '127.0.0.1'. Unparseable or 'null' -> '' (never allowed)."""
+    try:
+        hostname = urlsplit(origin).hostname or ""
+    except ValueError:
+        return ""
+    return f"[{hostname}]" if ":" in hostname else hostname
+
+
 def create_app(
     manager: JobManager | None = None,
     info_fetcher: Callable[[str], dict] = fetch_info,
     url_validator: Callable[[str], str] = validate_url,
     serve_web: bool = True,
+    allowed_hosts: tuple[str, ...] = DEFAULT_ALLOWED_HOSTS,
 ) -> FastAPI:
     if manager is None:
         base = Path(tempfile.gettempdir()) / "videodownloader"
@@ -89,6 +113,19 @@ def create_app(
         manager.shutdown()
 
     app = FastAPI(title="VideoDownloader", version="1.0.0", lifespan=lifespan)
+
+    allowed = frozenset(host.lower() for host in allowed_hosts)
+
+    @app.middleware("http")
+    async def _host_and_origin_check(request: Request, call_next):
+        # Blocks DNS-rebinding pages (foreign Host) and cross-origin POSTs (foreign Origin).
+        if _hostname_of_host_header(request.headers.get("host", "")) not in allowed:
+            return JSONResponse(status_code=403, content={"detail": "host not allowed"})
+        origin = request.headers.get("origin")
+        if origin is not None and request.method not in SAFE_METHODS:
+            if _hostname_of_origin(origin) not in allowed:
+                return JSONResponse(status_code=403, content={"detail": "origin not allowed"})
+        return await call_next(request)
 
     @app.exception_handler(DownloadFailure)
     async def _download_failure(_request, exc: DownloadFailure):
