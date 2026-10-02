@@ -93,3 +93,47 @@ def test_versions_line_names_the_three_updatable_packages():
     assert done.returncode == 0
     for package in ("yt-dlp ", "yt-dlp-ejs ", "curl-cffi "):
         assert package in done.stdout
+
+
+# --- up-to-date check: pip install --upgrade exits 0 even when the index is unreachable -----------
+
+PIP_INDEX_OUTPUT = """WARNING: pip index is currently an experimental command.
+yt-dlp (2026.8.19)
+Available versions: 2026.8.19, 2026.7.4
+  INSTALLED: 2026.8.19
+  LATEST:    2026.8.19
+"""
+
+
+class Done:
+    def __init__(self, returncode=0, stdout=""):
+        self.returncode, self.stdout = returncode, stdout
+
+
+def test_up_to_date_when_installed_is_the_latest():
+    results = check_env.check_up_to_date(run=lambda *a, **k: Done(0, PIP_INDEX_OUTPUT))
+    assert levels(results) == {"yt-dlp": "OK"}
+
+
+def test_outdated_install_fails_with_both_versions():
+    out = PIP_INDEX_OUTPUT.replace("LATEST:    2026.8.19", "LATEST:    2026.9.1")
+    ((level, _, detail),) = check_env.check_up_to_date(run=lambda *a, **k: Done(0, out))
+    assert level == "FAIL" and "2026.8.19" in detail and "2026.9.1" in detail
+
+
+def test_unreachable_index_is_a_failure_not_a_silent_success():
+    results = check_env.check_up_to_date(run=lambda *a, **k: Done(1, ""))
+    assert levels(results) == {"yt-dlp": "FAIL"}
+
+
+def test_timeout_and_unparseable_output_fail():
+    def hangs(*a, **k):
+        raise subprocess.TimeoutExpired("pip", 90)
+
+    assert levels(check_env.check_up_to_date(run=hangs)) == {"yt-dlp": "FAIL"}
+    assert levels(check_env.check_up_to_date(run=lambda *a, **k: Done(0, "no versions here"))) == {"yt-dlp": "FAIL"}
+
+
+def test_update_script_runs_the_up_to_date_check_before_reporting_success():
+    script = (SCRIPTS / "update-ytdlp.ps1").read_text(encoding="utf-8-sig")
+    assert script.index("--up-to-date") < script.index("Actualización verificada")

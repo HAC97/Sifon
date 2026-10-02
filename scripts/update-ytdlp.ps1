@@ -37,6 +37,12 @@ if ($LASTEXITCODE -ne 0) {
     Fail 'La verificación posterior a la actualización falló (líneas FAIL arriba).' 'No uses esta instalación hasta repararla: ejecutá install.cmd.'
 }
 
+# pip exits 0 with "already satisfied" when the index is unreachable, so ask the index itself.
+& $python $checkEnv --up-to-date
+if ($LASTEXITCODE -ne 0) {
+    Fail 'No se pudo confirmar que yt-dlp esté en la última versión (línea FAIL arriba).' 'Revisá tu conexión a internet y repetí la actualización.'
+}
+
 $after = & $python $checkEnv --versions
 Write-Host ''
 Write-Host "Antes:   $before"

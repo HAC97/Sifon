@@ -10,6 +10,7 @@ Usage (from any directory):
     python scripts/check_env.py              # interpreter + libraries + programs + settings
     python scripts/check_env.py --libs-only  # only the libraries (used right after pip)
     python scripts/check_env.py --versions   # one line, e.g. "yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0"
+    python scripts/check_env.py --up-to-date # asks the package index whether yt-dlp is the latest
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import importlib.metadata
 import importlib.util
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Callable, Iterable
@@ -90,6 +92,40 @@ def check_ejs_matches_ytdlp(
     return [("OK", "yt-dlp-ejs", f"{have} coincide con lo que pide yt-dlp")]
 
 
+def parse_index_versions(output: str) -> tuple[str, str] | None:
+    """(installed, latest) from the text of `pip index versions`, or None if it is not there."""
+    installed = re.search(r"^\s*INSTALLED:\s*(\S+)", output, re.M)
+    latest = re.search(r"^\s*LATEST:\s*(\S+)", output, re.M)
+    return (installed.group(1), latest.group(1)) if installed and latest else None
+
+
+def check_up_to_date(run: Callable = subprocess.run) -> list[Result]:
+    """Ask the package index (not just pip's cache) whether yt-dlp is the newest release.
+
+    `pip install --upgrade` exits 0 with "already satisfied" when the index cannot be reached,
+    so its exit code alone cannot prove an update happened or that nothing newer exists.
+    """
+    try:
+        done = run(
+            [sys.executable, "-m", "pip", "index", "versions", "yt-dlp", "--disable-pip-version-check"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=90,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return [("FAIL", "yt-dlp", "no pude consultar el índice de paquetes; no se puede confirmar que esté al día")]
+    if done.returncode != 0:
+        return [("FAIL", "yt-dlp", "no pude consultar el índice de paquetes (¿sin internet?); no se puede confirmar que esté al día")]
+    parsed = parse_index_versions(done.stdout)
+    if parsed is None:
+        return [("FAIL", "yt-dlp", "no pude interpretar la respuesta de pip index")]
+    installed, latest = parsed
+    if installed != latest:
+        return [("FAIL", "yt-dlp", f"instalada {installed}, pero la última publicada es {latest}")]
+    return [("OK", "yt-dlp", f"{installed} es la última versión publicada")]
+
+
 def check_programs(which: Callable[[str], str | None] = shutil.which) -> list[Result]:
     results: list[Result] = []
     if which("ffmpeg"):
@@ -143,6 +179,10 @@ def main(argv: list[str]) -> int:
     if "--versions" in argv:
         print(versions_line())
         return 0
+    if "--up-to-date" in argv:
+        results = check_up_to_date()
+        print(render(results))
+        return 1 if any(level == "FAIL" for level, _, _ in results) else 0
     ejs = check_ejs_matches_ytdlp()
     # The ejs result already names the version, so it replaces the plain library line.
     libs = [r for r in check_libraries() if not (ejs and r[1] == "yt-dlp-ejs" and r[0] == "OK")]
