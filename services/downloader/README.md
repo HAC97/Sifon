@@ -28,7 +28,7 @@ Tres carriles, desde la raíz del repo:
 | e2e | `.\services\downloader\.venv\Scripts\python.exe -m pytest services\downloader\tests\e2e -m e2e -q` | Navegador real, necesita `.\services\downloader\.venv\Scripts\python.exe -m playwright install chromium` (una vez; playwright viene de `requirements-dev.txt`). |
 | eval | `.\services\downloader\.venv\Scripts\python.exe -m pytest services\downloader\evals -m eval -s -q` | Usa la red y baja archivos reales. Umbral 80%. |
 
-Último resultado real del eval: 9 de 11 casos (82%, umbral 80%). Pasan YouTube, SoundCloud, archive.org y Dailymotion. Los dos casos de Vimeo fallan a propósito (el video de prueba ya no existe y los demás piden login). El margen es chico, y como usa sitios reales puede bajar por caídas de red o del sitio. URLs y cómo se verificaron: `services/downloader/evals/URL_VERIFICATION.md`.
+Resultados del eval el 2026-10-01: una corrida dio 9 de 11 casos (82%, umbral 80%), con YouTube, SoundCloud, archive.org y Dailymotion pasando. Tres corridas posteriores el mismo día dieron 73%, 64% y 64%: archive.org no respondía desde esta máquina (timeouts) y un caso de audio de YouTube falló una vez por un error de red. Los dos casos de Vimeo fallan a propósito (el video de prueba ya no existe y los demás piden login). Por eso el umbral de 80% no está confirmado como estable: hay que volver a correr el eval cuando los sitios respondan. URLs y cómo se verificaron: `services/downloader/evals/URL_VERIFICATION.md`.
 
 ## jobs.log
 

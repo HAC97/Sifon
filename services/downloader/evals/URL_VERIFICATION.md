@@ -26,6 +26,6 @@ Re-check after adding curl_cffi (2026-10-01, same `--simulate` command):
 - Dailymotion http://www.dailymotion.com/video/x5kesuj: now works, `Office Christmas Party Review - Jason Bateman, Olivia Munn, T.J. Miller | 187`. Kept.
 - Vimeo https://vimeo.com/56015672: `ERROR: Unable to download webpage: HTTP Error 404: Not Found` (video no longer exists). Other Vimeo URLs after the install: 148751763 and 347119375 give 404; 22439234, 76979871, 1084537, 90509568 give `The web client only works when logged-in`. No public Vimeo URL found that works without login, so the Vimeo cases stay in the eval as honest FAILs (not replaced by another site).
 
-Conclusion: 7 Vimeo URLs were tried (56015672, 22439234, 76979871, 1084537, 148751763, 90509568, 347119375), none was usable (404 or login-only), so the 2 Vimeo eval cases are kept and fail on purpose. The eval margin is thin: 9 of 11 = 82% against an 80% threshold.
+Conclusion: 7 Vimeo URLs were tried (56015672, 22439234, 76979871, 1084537, 148751763, 90509568, 347119375), none was usable (404 or login-only), so the 2 Vimeo eval cases are kept and fail on purpose. The eval margin is thin: 9 of 11 = 82% against an 80% threshold. Three later runs the same day gave 73%, 64% and 64% (archive.org did not answer from this machine; one YouTube audio case failed once), so the threshold is not confirmed as stable and the eval must be re-run when the sites are reachable.
 
 Earlier notes (before the install): Dailymotion failed with the missing impersonation target, Vimeo with the login error.

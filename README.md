@@ -27,7 +27,7 @@ Si ya tenías un entorno viejo, volvé a correr el `pip install -r` de arriba: `
 .\scripts\run.ps1
 ```
 
-Abrí `http://127.0.0.1:8000`. Para otro puerto: `.\scripts\run.ps1 -Port 8765`. El servidor escucha solo en `127.0.0.1`.
+Abrí `http://127.0.0.1:8000`. Si el puerto 8000 ya está en uso en tu máquina, usá otro: `.\scripts\run.ps1 -Port 8765` (y abrí `http://127.0.0.1:8765`). El servidor escucha solo en `127.0.0.1`.
 
 ## Actualizar yt-dlp
 
