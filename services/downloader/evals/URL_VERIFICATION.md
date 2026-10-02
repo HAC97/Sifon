@@ -21,5 +21,9 @@ Command (per URL, from the repo root):
 | Dailymotion | https://www.dailymotion.com/video/x2iuewm, xwh1w2, x8jvaoo | `ERROR: Not found.` | no |
 | Dailymotion | https://www.dailymotion.com/video/x7tgad0 | same impersonation error as x5kesuj | no |
 
-Notes:
-- Vimeo and Dailymotion fail for every URL tried, for environmental reasons (Vimeo web client requires login; Dailymotion extractor requires a curl_cffi impersonation target, not installed). No other public URL of those sites changes the outcome, so the original URLs stay in the eval and fail honestly. We do not use cookies or install impersonation to get around it.
+Re-check after adding curl_cffi (2026-10-01, same `--simulate` command):
+- `services/downloader/requirements.txt` now has `yt-dlp[default,curl-cffi]` and the extras were installed in the venv (curl-cffi 0.16.3), so impersonation is available through the normal yt-dlp mechanism. No cookies, no login, no other workaround.
+- Dailymotion http://www.dailymotion.com/video/x5kesuj: now works, `Office Christmas Party Review - Jason Bateman, Olivia Munn, T.J. Miller | 187`. Kept.
+- Vimeo https://vimeo.com/56015672: `ERROR: Unable to download webpage: HTTP Error 404: Not Found` (video no longer exists). Other Vimeo URLs after the install: 148751763 and 347119375 give 404; 22439234, 76979871, 1084537, 90509568 give `The web client only works when logged-in`. No public Vimeo URL found that works without login, so the Vimeo cases stay in the eval as honest FAILs (not replaced by another site).
+
+Earlier notes (before the install): Dailymotion failed with the missing impersonation target, Vimeo with the login error.
