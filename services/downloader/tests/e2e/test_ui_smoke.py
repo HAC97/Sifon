@@ -88,3 +88,87 @@ def test_unsupported_site_error_is_shown(server, page):
     page.wait_for_selector("#error:not([hidden])")
     assert "no está soportado" in page.inner_text("#error")
     assert not page.is_visible("#card")
+
+
+def search(page, server, url="https://example.com/v"):
+    page.goto(server)
+    page.fill("#url", url)
+    page.click("#fetch")
+    page.wait_for_selector("#card:not([hidden])")
+
+
+def test_finished_job_counts_to_100_and_offers_the_file_again(server, page):
+    search(page, server)
+    assert not page.is_visible("#again")
+    with page.expect_download(timeout=10000):
+        page.click("#download")
+    page.wait_for_selector("#again:not([hidden])")
+    page.wait_for_function("document.getElementById('pct').textContent === '100'")
+    assert "Listo: clip.mp4" in page.inner_text("#status")
+
+    with page.expect_download(timeout=10000) as again:
+        page.click("#again")
+    assert again.value.suggested_filename == "clip.mp4"
+    assert Path(again.value.path()).read_bytes() == b"data"
+
+
+def test_busy_state_lasts_only_while_a_job_runs(server, page):
+    search(page, server)
+    assert not page.evaluate("document.body.classList.contains('busy')")
+    with page.expect_download(timeout=10000):
+        page.click("#download")
+        assert page.evaluate("document.body.classList.contains('busy')")
+    page.wait_for_function("!document.body.classList.contains('busy')")
+    assert page.is_enabled("#download") and page.is_enabled("#paste")
+
+
+def test_paste_button_reads_the_clipboard_and_searches(server, page):
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=server)
+    page.goto(server)
+    page.evaluate("navigator.clipboard.writeText('https://example.com/v')")
+    page.click("#paste")
+    page.wait_for_selector("#card:not([hidden])")
+    assert page.input_value("#url") == "https://example.com/v"
+
+
+def test_paste_button_explains_what_to_do_when_the_clipboard_is_blocked(server, page):
+    page.goto(server)
+    # Written as a function body: a bare expression that returns a function would be *called* by evaluate().
+    page.evaluate(
+        "() => { navigator.clipboard.readText = () => Promise.reject(new DOMException('denied', 'NotAllowedError')); }"
+    )
+    page.click("#paste")
+    page.wait_for_selector("#error:not([hidden])")
+    assert "Ctrl+V" in page.inner_text("#error")
+    assert not page.is_visible("#card")
+
+
+def test_paste_button_with_an_empty_clipboard_says_so(server, page):
+    page.goto(server)
+    page.evaluate("() => { navigator.clipboard.readText = () => Promise.resolve('   '); }")
+    page.click("#paste")
+    page.wait_for_selector("#error:not([hidden])")
+    assert "vacío" in page.inner_text("#error")
+    assert not page.is_visible("#card")
+
+
+PASTE_INTO_FIELD = """(text) => {
+    const input = document.getElementById('url');
+    input.value = text;
+    input.dispatchEvent(new Event('paste'));
+}"""
+
+
+def test_pasting_a_link_into_the_field_searches_right_away(server, page):
+    page.goto(server)
+    page.evaluate(PASTE_INTO_FIELD, "https://example.com/v")
+    page.wait_for_selector("#card:not([hidden])")
+
+
+def test_pasting_a_link_that_is_not_http_does_not_search(server, page):
+    # A valid URL for the browser's own type=url check, so only our handler can stop the search.
+    page.goto(server)
+    page.evaluate(PASTE_INTO_FIELD, "ftp://example.com/v")
+    page.wait_for_timeout(300)  # negative check: give the handler's timer time to (not) fire
+    assert not page.is_visible("#card")
+    assert not page.is_visible("#error")

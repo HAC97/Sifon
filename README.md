@@ -1,6 +1,8 @@
-# VideoDownloader
+# sifón
 
-Descargador de videos y audio local, parecido a cobalt. Pegás una URL, elegís video (con calidad) o solo audio (mp3, m4a u opus) y bajás el archivo. Corre en tu máquina: backend FastAPI + yt-dlp, interfaz web simple.
+Descargador de videos y audio local, parecido a cobalt. Pegás una URL, elegís video (con calidad) o solo audio (mp3, m4a u opus) y bajás el archivo. Corre en tu máquina: backend FastAPI + yt-dlp, interfaz web propia que sigue el modo claro u oscuro de tu sistema. La carpeta del proyecto y los módulos siguen llamándose `VideoDownloader`.
+
+El botón **Pegar** toma el enlace del portapapeles y busca solo (el navegador puede pedirte permiso la primera vez). Si pegás con Ctrl+V dentro del campo un enlace que empieza con `http://` o `https://`, también busca de inmediato.
 
 Descargá solo contenido sobre el que tengas derecho a hacerlo y respetá los términos de cada sitio.
 

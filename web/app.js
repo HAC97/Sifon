@@ -52,18 +52,50 @@ function formatDuration(seconds) {
 
 function formatSpeed(bytesPerSecond) {
   if (!bytesPerSecond) return "";
-  return ` · ${(bytesPerSecond / 1048576).toFixed(1)} MB/s`;
+  return `${(bytesPerSecond / 1048576).toFixed(1)} MB/s`;
 }
 
 function setBusy(busy) {
   $("fetch").disabled = busy;
+  $("paste").disabled = busy;
   $("download").disabled = busy;
+  document.body.classList.toggle("busy", busy);
 }
 
-function setProgress(percent, text) {
-  $("bar").value = percent;
-  $("status").textContent = text;
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let shownPercent = 0;
+let tween = 0;
+
+// The big percentage counts up to the target instead of jumping once per poll.
+function setPercent(target, instant) {
+  cancelAnimationFrame(tween);
+  const to = Math.max(0, Math.min(100, target));
+  const from = shownPercent;
+  if (instant || reduceMotion.matches || to === from) {
+    shownPercent = to;
+    $("pct").textContent = String(Math.floor(to));
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - start) / 700);
+    shownPercent = from + (to - from) * k;
+    $("pct").textContent = String(Math.floor(shownPercent));
+    if (k < 1) tween = requestAnimationFrame(step);
+  };
+  tween = requestAnimationFrame(step);
 }
+
+// `status` is a live region: only rewrite it when the phase changes, so a screen reader
+// is not interrupted once per second. Speed goes to `detail`, which is not announced.
+function setProgress(percent, text, detail = "", instant = false) {
+  $("bar").value = percent;
+  setPercent(percent, instant);
+  if ($("status").textContent !== text) $("status").textContent = text;
+  $("detail").textContent = detail;
+}
+
+let lastJobId = null;
 
 function selectedMode() {
   return document.querySelector('input[name="mode"]:checked').value;
@@ -96,6 +128,7 @@ function renderInfo(info) {
   }
 
   show($("progress"), false);
+  show($("again"), false);
   show($("card"), true);
 }
 
@@ -116,13 +149,15 @@ async function pollJob(jobId) {
     }
     if (job.status === "done") {
       setProgress(100, `Listo: ${job.filename}`);
+      lastJobId = jobId;
+      show($("again"), true);
       triggerDownload(jobId);
       return;
     }
     if (job.status === "processing") {
       setProgress(100, "Procesando…");
     } else if (job.status === "downloading") {
-      setProgress(job.percent, `Descargando ${Math.floor(job.percent)}%${formatSpeed(job.speed)}`);
+      setProgress(job.percent, "Descargando", formatSpeed(job.speed));
     } else {
       setProgress(0, "En cola…");
     }
@@ -154,11 +189,40 @@ for (const radio of document.querySelectorAll('input[name="mode"]')) {
   });
 }
 
+$("paste").addEventListener("click", async () => {
+  showError("");
+  let text = "";
+  try {
+    text = (await navigator.clipboard.readText()).trim();
+  } catch {
+    showError("No pude leer el portapapeles. Pegá el enlace con Ctrl+V.");
+    return;
+  }
+  if (!text) {
+    showError("El portapapeles está vacío. Copiá un enlace y probá de nuevo.");
+    return;
+  }
+  $("url").value = text;
+  $("url-form").requestSubmit();
+});
+
+// Ctrl+V straight into the field: search right away when it looks like a link.
+$("url").addEventListener("paste", () => {
+  setTimeout(() => {
+    if (/^https?:\/\//i.test($("url").value.trim())) $("url-form").requestSubmit();
+  }, 0);
+});
+
+$("again").addEventListener("click", () => {
+  if (lastJobId) triggerDownload(lastJobId);
+});
+
 $("download").addEventListener("click", async () => {
   showError("");
   setBusy(true);
+  show($("again"), false);
   show($("progress"), true);
-  setProgress(0, "En cola…");
+  setProgress(0, "En cola…", "", true);
   try {
     const { job_id: jobId } = await postJson("/api/jobs", {
       url: $("url").value.trim(),
