@@ -2,6 +2,17 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado: `0.x` mientras la instalación se pruebe en pocas máquinas.
 
+## [Sin publicar]
+
+### Agregado
+
+- `packaging/winget/make_manifest.py`: genera, a partir del propio release (URL y `SHA256SUMS.txt`), los cuatro archivos del manifiesto de winget (`HAC97.sifon`), con tests; el resultado pasa `winget validate` sin advertencias. Guía en `packaging/winget/README.md`.
+- README: secciones **Privacidad** y **Política de firma de código** (requisito de SignPath Foundation); `docs/code-signing.md`.
+
+### Cambiado
+
+- El repositorio pasó a llamarse `HAC97/Sifon`: URLs actualizadas.
+
 ## [0.2.0] - sin fecha (pendiente de etiquetar)
 
 Primera versión con **ejecutable para Windows**: se baja el instalador desde Releases y no hace falta instalar nada más.

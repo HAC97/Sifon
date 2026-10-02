@@ -17,8 +17,8 @@ AppName=sifón
 AppVersion={#AppVersion}
 AppVerName=sifón {#AppVersion}
 AppPublisher=HAC97
-AppPublisherURL=https://github.com/HAC97/Tifon
-AppSupportURL=https://github.com/HAC97/Tifon/issues
+AppPublisherURL=https://github.com/HAC97/Sifon
+AppSupportURL=https://github.com/HAC97/Sifon/issues
 VersionInfoVersion={#AppVersion}
 ; Per-user install: no administrator prompt, nothing outside the user's own folders.
 PrivilegesRequired=lowest
