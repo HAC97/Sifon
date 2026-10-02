@@ -35,6 +35,9 @@ $report = & $python $checkEnv
 $checkExit = $LASTEXITCODE
 $report | Where-Object { $_ -match '^(WARN|FAIL)' } | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
 if ($checkExit -ne 0) {
+    if ($report -match '^FAIL\s+settings') {
+        Fail 'Un valor SIFON_* no es válido (línea FAIL arriba).' 'Corregí o quitá esa variable de entorno (ver "Límites" en el README) y volvé a iniciar.'
+    }
     Fail 'Falta algo para poder iniciar (líneas FAIL arriba).' 'Ejecutá install.cmd para repararlo.'
 }
 
@@ -79,5 +82,6 @@ try {
     if (-not $NoBrowser) { Start-Process $url }
     $server.WaitForExit()
 } finally {
-    if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+    # The venv's python.exe is a launcher that starts the real interpreter as a child, so stop the whole tree.
+    if (-not $server.HasExited) { & taskkill.exe /PID $server.Id /T /F *> $null }
 }

@@ -1,0 +1,92 @@
+name: CI
+
+# Deterministic checks only: no real sites, no downloads of real content.
+# Evaluations against real services live in evals.yml and never gate a merge.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests, API contract and browser (Windows, Python 3.12)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/downloader/requirements-dev.txt
+
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install dependencies
+        run: python -m pip install -r services/downloader/requirements-dev.txt
+
+      - name: PowerShell scripts parse
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($file in Get-ChildItem scripts/*.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Host "$($file.Name): $_" }; $failed = $true }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Gate tests (local, no network)
+        run: python -m pytest services/downloader/tests -q
+
+      - name: API contract is up to date
+        run: |
+          python scripts/gen_contract.py
+          git diff --exit-code -- contracts/api.openapi.json
+
+      - name: Browser tests
+        run: |
+          python -m playwright install chromium
+          python -m pytest services/downloader/tests/e2e -m e2e -q
+
+  install-smoke:
+    name: Install from scratch and start (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: install.cmd
+        shell: cmd
+        run: install.cmd
+
+      - name: Start with run.cmd and read /api/health
+        shell: powershell
+        run: |
+          $server = Start-Process -FilePath cmd.exe -ArgumentList '/c', 'run.cmd', '-Port', '8765', '-NoBrowser' -PassThru -RedirectStandardOutput run.out -RedirectStandardError run.err
+          $health = $null
+          for ($i = 0; $i -lt 60 -and -not $health; $i++) {
+            Start-Sleep -Seconds 1
+            try { $health = Invoke-RestMethod http://127.0.0.1:8765/api/health -TimeoutSec 2 } catch {}
+          }
+          Get-Content run.out, run.err
+          if (-not $health -or -not $health.ok) { throw 'the server did not answer /api/health' }
+          $health | ConvertTo-Json
+          if (-not $health.ffmpeg) { throw 'health says ffmpeg is missing' }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*uvicorn*8765*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
