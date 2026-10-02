@@ -86,10 +86,12 @@ class JobManager:
         self._disk_usage = disk_usage
         self._last_disk_check = 0.0
         self._jobs: dict[str, Job] = {}
+        self._undeleted: set[Path] = set()  # folders Windows would not let us delete yet (file in use)
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="job")
         self._stop = threading.Event()
         self._sweeper: threading.Thread | None = None
+        self.touch_alive()
 
     @property
     def base_dir(self) -> Path:
@@ -130,7 +132,7 @@ class JobManager:
             if not active:
                 del self._jobs[job_id]
         if not active:
-            shutil.rmtree(job.dir, ignore_errors=True)
+            self._discard(job.dir)
             return job
         job.cancel_event.set()
         # Still waiting in the pool: it never starts, so finish it here.
@@ -152,8 +154,26 @@ class JobManager:
             ]
             expired = [self._jobs.pop(job_id) for job_id in expired_ids]
         for job in expired:
-            shutil.rmtree(job.dir, ignore_errors=True)
+            self._discard(job.dir)
+        self._retry_undeleted()
         return len(expired)
+
+    def _discard(self, path: Path) -> None:
+        """Delete a job folder. On Windows a file a client is still reading cannot be deleted:
+        remember the folder and try again on the next sweep instead of leaving it until exit."""
+        shutil.rmtree(path, ignore_errors=True)
+        if path.exists():
+            with self._lock:
+                self._undeleted.add(path)
+
+    def _retry_undeleted(self) -> None:
+        with self._lock:
+            pending = list(self._undeleted)
+        for path in pending:
+            shutil.rmtree(path, ignore_errors=True)
+            if not path.exists():
+                with self._lock:
+                    self._undeleted.discard(path)
 
     def start_sweeper(self, interval: float = 60.0) -> None:
         if self._sweeper is not None:
@@ -249,7 +269,7 @@ class JobManager:
         job.eta = None
         if status != "done":
             # Nothing is left to download, so a failed or cancelled job frees its partial files now.
-            shutil.rmtree(job.dir, ignore_errors=True)
+            self._discard(job.dir)
         if path is not None:
             job.file_path = path
             job.filename = path.name

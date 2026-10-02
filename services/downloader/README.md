@@ -28,11 +28,12 @@ Variables `SIFON_*` leídas al crear la app (`app/config.py`); valores y efecto 
 - Cola y concurrencia: `JobManager.create` (el conteo y el alta se hacen bajo un mismo lock, así que pedidos simultáneos no superan el tope) y el pool de hilos.
 - Tamaño y espacio libre: el hook de progreso de yt-dlp (`JobManager._check_limits`) aborta la descarga en curso; el espacio libre se vuelve a medir como mucho cada 2 s y también al crear el trabajo.
 - Duración y transmisiones en vivo: `match_filter` de yt-dlp en `ytdlp_runner.run_download`, antes de bajar nada.
+- Memoria: `SIFON_MAX_MEMORY_MB` fija un tope de memoria al proceso del servidor con un Job Object de Windows (`app/hardening.py`, solo lo aplica `server_app`, el punto de entrada de `run.cmd`; los tests no). yt-dlp guarda en memoria las páginas que descarga al extraer y una página que no termina nunca no pasa por ningún otro límite: al llegar al tope, el hilo de la descarga recibe `MemoryError` y el trabajo falla, en lugar de congelar el equipo. Además, el proxy de salida corta cada conexión al superar un tope de bytes (`SIFON_MAX_FILESIZE_MB` para descargas, 32 MB para `/api/info`).
 - Cancelación: `JobManager.cancel` marca el trabajo; el hook de progreso lanza `CANCELLED` en el siguiente evento. Un trabajo en cola nunca arranca. Si se cancela mientras ffmpeg convierte, el resultado se descarta al terminar.
 
 ## Archivos temporales
 
-`%TEMP%\sifon-<pid>` (ver `create_app`). Un trabajo fallido o cancelado borra su carpeta al terminar; uno completado, `SIFON_TTL_MINUTES` después (barrido cada 60 s); `shutdown()` borra todo. La ejecución toca `.alive` cada 60 s y, al arrancar, `create_app` borra las carpetas `sifon-*` ajenas con ese latido de más de 10 minutos (o sin latido y con la carpeta igual de vieja): son de una ejecución que murió sin limpiar.
+`%TEMP%\sifon-<pid>` (ver `create_app`). Un trabajo fallido o cancelado borra su carpeta al terminar; uno completado, `SIFON_TTL_MINUTES` después (barrido cada 60 s); `shutdown()` borra todo. Si Windows no deja borrar una carpeta porque un cliente todavía lee el archivo, se recuerda y se reintenta en cada barrido. La ejecución toca `.alive` al crearse y cada 60 s; al arrancar, `create_app` borra solo las carpetas llamadas `sifon-<número>` que **contienen** ese archivo y cuyo latido tiene más de 10 minutos: son de una ejecución que murió sin limpiar. Una carpeta sin `.alive` nunca se borra.
 
 ## Tests
 
@@ -71,9 +72,16 @@ La API no tiene autenticación. **No está preparada para exponerse directamente
 
 Cubierto por tests (`tests/test_egress_proxy.py`, `tests/test_limits_integration.py`): redirección público → privado, respuesta DNS mixta, una sola resolución por conexión, IP literal privada, CONNECT, y la aplicación ensamblada con yt-dlp real.
 
+4. **Entorno y ffmpeg.** `ffmpeg` es un proceso hijo con su propia red. El servidor (`server_app`) apunta `HTTP_PROXY`, `HTTPS_PROXY` y sus versiones en minúscula al proxy interno y elimina `NO_PROXY` y `ALL_PROXY` mientras corre (con `NO_PROXY=127.0.0.1` los manejadores `urllib` y `curl-cffi` de yt-dlp y el propio ffmpeg se saltaban el proxy: lo encontró la revisión de seguridad). Además a ffmpeg se le pasa una lista de protocolos permitidos (`-protocol_whitelist http,https,tls,tcp,crypto,data`, `app/formats.py`) que excluye `httpproxy://`, con el que un manifiesto HLS público podía hacer que ffmpeg se conectara directo a una dirección privada. **Costo:** cuando es ffmpeg quien baja los segmentos (poco frecuente: HLS con SAMPLE-AES y algunas transmisiones en vivo), los segmentos `https` fallan en lugar de arriesgar una conexión directa.
+
+Cubierto además por `tests/test_review_regressions.py` (tope de bytes, entorno, ffmpeg con un manifiesto hostil, borrado reintentado), `tests/test_blocked_ip.py` (formas IPv6 con IPv4 embebida, rangos obsoletos) y `tests/test_api.py` (Origin con el mismo puerto que el `Host`, `Host` mal formado).
+
 Lo que no cubre:
 
 - Un proxy de empresa para salir a internet no se respeta (el tráfico de yt-dlp va solo por el proxy interno).
+- El proxy reenvía a cualquier puerto de una dirección pública (también 22 o 25), no tiene autenticación y lo puede usar cualquier proceso local; solo escucha en `127.0.0.1` y nunca hacia redes privadas.
+- Los límites de tamaño y de espacio libre se miden durante la descarga de cada flujo, no durante la fusión final de ffmpeg: un video con audio separado puede ocupar hasta cerca del doble del límite más el archivo fusionado. La duración solo se puede exigir si el sitio la informa.
+- Los trabajos sí están limitados, pero `POST /api/info` no se encola: varias consultas simultáneas son posibles (cada una con el tope de 32 MB).
 - Los clientes HTTP de yt-dlp son de terceros: un cliente nuevo que ignore la opción `proxy` evadiría el control. Los tres actuales se probaron; un cambio grande de yt-dlp justifica volver a correr los tests.
 - No hay autenticación, límites por usuario ni cuotas: los límites son del equipo, no de quien llama.
 

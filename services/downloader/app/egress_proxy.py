@@ -42,9 +42,13 @@ class EgressProxy:
         self,
         resolver: Resolver = socket.getaddrinfo,
         is_blocked: Callable = is_blocked_ip,
+        max_response_bytes: int | None = None,
     ):
         self._resolver = resolver
         self._is_blocked = is_blocked
+        # Upstream-to-client bytes allowed on one connection. A page that never ends would
+        # otherwise be buffered in memory by yt-dlp without bound.
+        self._max_response = max_response_bytes
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._server: asyncio.base_events.Server | None = None
@@ -151,10 +155,13 @@ class EgressProxy:
                 await self._tunnel(reader, writer, upstream_reader, upstream_writer)
                 return
 
-            split = urlsplit(target)
+            try:
+                split = urlsplit(target)
+                port = split.port or 80
+            except ValueError:  # e.g. port 99999 or "abc"
+                raise _Refused(400, "Bad Request") from None
             if split.scheme != "http" or not split.hostname:
                 raise _Refused(400, "Bad Request")
-            port = split.port or 80
             upstream_reader, upstream_writer = await self._connect(split.hostname, port)
             path = split.path or "/"
             if split.query:
@@ -185,12 +192,16 @@ class EgressProxy:
                         pass
 
     @staticmethod
-    async def _pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
+    async def _pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter, limit: int | None = None) -> None:
+        moved = 0
         try:
             while True:
                 data = await asyncio.wait_for(source.read(65536), IDLE_TIMEOUT)
                 if not data:
                     break
+                moved += len(data)
+                if limit is not None and moved > limit:
+                    break  # closing the connection ends the transfer: the caller sees a truncated body
                 sink.write(data)
                 await sink.drain()
         except (OSError, asyncio.TimeoutError):
@@ -199,7 +210,7 @@ class EgressProxy:
     async def _tunnel(self, client_r, client_w, upstream_r, upstream_w) -> None:
         tasks = [
             asyncio.ensure_future(self._pipe(client_r, upstream_w)),
-            asyncio.ensure_future(self._pipe(upstream_r, client_w)),
+            asyncio.ensure_future(self._pipe(upstream_r, client_w, self._max_response)),
         ]
         _, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:

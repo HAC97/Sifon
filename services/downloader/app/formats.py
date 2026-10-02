@@ -1,6 +1,13 @@
 HEIGHTS = ("360", "480", "720", "1080", "1440", "2160")
 AUDIO_CODECS = {"mp3": "mp3", "m4a": "m4a", "opus": "opus"}
 
+# ffmpeg is a child process with its own networking, so it can reach hosts without passing the
+# egress proxy. This allow-list keeps it to plain http(s) and in particular refuses `httpproxy://`,
+# which ffmpeg treats as "connect straight to this host:port". Cost: when ffmpeg itself (rare:
+# SAMPLE-AES HLS, some live streams) must fetch https segments through our proxy it needs
+# `httpproxy` internally, so those downloads fail instead of risking a direct connection.
+FFMPEG_INPUT_PROTOCOLS = "http,https,tls,tcp,crypto,data"
+
 # 120 chars keeps the full path under Windows' 260 limit even inside the temp dir.
 OUTTMPL = "%(title).120s [%(id)s].%(ext)s"
 
@@ -35,6 +42,7 @@ def ytdlp_options(
         "socket_timeout": 20,
         "retries": 3,
         "progress_hooks": [progress_hook],
+        "external_downloader_args": {"ffmpeg_i": ["-protocol_whitelist", FFMPEG_INPUT_PROTOCOLS]},
     }
     if postprocessor_hook is not None:
         opts["postprocessor_hooks"] = [postprocessor_hook]

@@ -62,7 +62,7 @@ Write-Host 'Para cerrarlo: Ctrl+C en esta ventana.'
 Write-Host ''
 
 $server = Start-Process -FilePath $python -WorkingDirectory $service -NoNewWindow -PassThru -ArgumentList @(
-    '-m', 'uvicorn', 'app.main:create_app', '--factory', '--host', '127.0.0.1', '--port', "$Port"
+    '-m', 'uvicorn', 'app.main:server_app', '--factory', '--host', '127.0.0.1', '--port', "$Port"
 )
 try {
     $ready = $false

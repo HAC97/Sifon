@@ -1,4 +1,4 @@
-"""Temp directories: a dead run is cleaned up, a live one never is."""
+"""Temp directories: a dead run is cleaned up, a live one and anything that is not ours never is."""
 import os
 import time
 
@@ -32,11 +32,18 @@ def test_run_with_a_fresh_heartbeat_is_kept_even_if_its_folder_is_old(tmp_path):
     assert (live / "job" / "video.mp4").exists()
 
 
-def test_run_without_heartbeat_falls_back_to_the_folder_age(tmp_path):
-    old = make_run(tmp_path, "333", dir_age=STALE_AFTER_SECONDS + 60)
-    new = make_run(tmp_path, "444", dir_age=5)
+def test_a_folder_without_our_heartbeat_is_never_deleted_however_old(tmp_path):
+    """Found by the security review: an old `sifon-<number>` folder with no .alive is not ours to delete."""
+    foreign = make_run(tmp_path, "333", dir_age=10 * STALE_AFTER_SECONDS)
     _sweep_stale_temp_dirs(tmp_path, keep=tmp_path / "none")
-    assert not old.exists() and new.exists()
+    assert (foreign / "job" / "video.mp4").exists()
+
+
+def test_folders_that_only_start_with_the_prefix_are_never_touched(tmp_path):
+    notes = make_run(tmp_path, "notes", heartbeat_age=10 * STALE_AFTER_SECONDS)
+    backup = make_run(tmp_path, "123-backup", heartbeat_age=10 * STALE_AFTER_SECONDS)
+    _sweep_stale_temp_dirs(tmp_path, keep=tmp_path / "none")
+    assert notes.exists() and backup.exists()
 
 
 def test_our_own_dir_and_unrelated_folders_are_never_touched(tmp_path):
@@ -48,13 +55,23 @@ def test_our_own_dir_and_unrelated_folders_are_never_touched(tmp_path):
     assert mine.exists() and (other / "keep.txt").exists()
 
 
-def test_the_sweeper_writes_the_heartbeat(tmp_path):
+def test_the_manager_writes_a_heartbeat_as_soon_as_it_exists(tmp_path):
     manager = JobManager(tmp_path / "base", lambda job, cb: job.dir)
     try:
+        assert (manager.base_dir / ALIVE_FILE).exists()
+    finally:
+        manager.shutdown()
+
+
+def test_the_sweeper_keeps_refreshing_the_heartbeat(tmp_path):
+    manager = JobManager(tmp_path / "base", lambda job, cb: job.dir)
+    beat = manager.base_dir / ALIVE_FILE
+    try:
+        os.utime(beat, (1000, 1000))
         manager.start_sweeper(interval=0.05)
         deadline = time.time() + 3
-        while time.time() < deadline and not (manager.base_dir / ALIVE_FILE).exists():
+        while time.time() < deadline and beat.stat().st_mtime < 2000:
             time.sleep(0.01)
-        assert (manager.base_dir / ALIVE_FILE).exists()
+        assert beat.stat().st_mtime > 2000
     finally:
         manager.shutdown()

@@ -24,10 +24,15 @@ class Settings:
     max_duration_min: int = 180      # longer videos (and live streams) are rejected
     min_free_disk_mb: int = 1024     # a job is refused, or stopped, below this much free space
     ttl_minutes: int = 30            # finished files are deleted this long after they finish
+    max_memory_mb: int = 4096        # memory cap of the server process (Windows); see app.hardening
 
     @property
     def max_filesize_bytes(self) -> int:
         return self.max_filesize_mb * 1024 * 1024
+
+    @property
+    def max_memory_bytes(self) -> int:
+        return self.max_memory_mb * 1024 * 1024
 
     @property
     def min_free_disk_bytes(self) -> int:
@@ -41,6 +46,7 @@ _VARIABLES = {
     "SIFON_MAX_DURATION_MIN": "max_duration_min",
     "SIFON_MIN_FREE_DISK_MB": "min_free_disk_mb",
     "SIFON_TTL_MINUTES": "ttl_minutes",
+    "SIFON_MAX_MEMORY_MB": "max_memory_mb",
 }
 
 

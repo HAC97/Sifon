@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -21,6 +22,7 @@ from app.config import Settings, load_settings
 from app.egress_proxy import EgressProxy
 from app.errors import HTTP_STATUS, DownloadFailure, ErrorCode
 from app.extractor import fetch_info
+from app.hardening import limit_process_memory, route_environment_through
 from app.jobs import ALIVE_FILE, JobManager
 from app.runtimes import detect_js_runtime, js_runtimes_option
 from app.urlcheck import validate_url
@@ -107,20 +109,47 @@ def _hostname_of_origin(origin: str) -> str:
     return f"[{hostname}]" if ":" in hostname else hostname
 
 
+def _port_of_host_header(value: str) -> int | None:
+    """'LocalHost:8000' -> 8000, '127.0.0.1' -> 80 (no port means the http default), garbage -> None."""
+    value = value.strip().lower()
+    rest = value[value.find("]") + 1 :] if value.startswith("[") else value.partition(":")[1] + value.partition(":")[2]
+    if rest == "":
+        return 80
+    if not rest.startswith(":") or not rest[1:].isdigit():
+        return None
+    return int(rest[1:])
+
+
+def _port_of_origin(origin: str) -> int | None:
+    try:
+        parts = urlsplit(origin)
+        return parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return None
+
+
 TEMP_PREFIX = "sifon-"
+# /api/info only reads web pages and manifests, never media: a page bigger than this is not a page.
+INFO_RESPONSE_CAP = 32 * 1024 * 1024
 STALE_AFTER_SECONDS = 10 * 60  # a running instance refreshes its heartbeat every minute
 
 
+_OWN_DIR = re.compile(rf"^{re.escape(TEMP_PREFIX)}\d+$")
+
+
 def _sweep_stale_temp_dirs(root: Path, keep: Path, now: float | None = None) -> None:
-    """Remove the temp dirs of runs that died without cleaning up (heartbeat stale)."""
+    """Remove the temp dirs of runs that died without cleaning up (heartbeat stale).
+
+    Only folders named `sifon-<number>` that contain our heartbeat file are ever touched, so
+    a folder of the user's that merely starts with "sifon-" is left alone.
+    """
     cutoff = (time.time() if now is None else now) - STALE_AFTER_SECONDS
     for entry in root.glob(f"{TEMP_PREFIX}*"):
         try:
-            if entry == keep or not entry.is_dir():
+            if entry == keep or not _OWN_DIR.match(entry.name) or not entry.is_dir():
                 continue
             beat = entry / ALIVE_FILE
-            last_seen = beat.stat().st_mtime if beat.exists() else entry.stat().st_mtime
-            if last_seen < cutoff:
+            if beat.is_file() and beat.stat().st_mtime < cutoff:
                 shutil.rmtree(entry, ignore_errors=True)
         except OSError:
             continue
@@ -134,14 +163,18 @@ def create_app(
     allowed_hosts: tuple[str, ...] = DEFAULT_ALLOWED_HOSTS,
     settings: Settings | None = None,
     egress: EgressProxy | None = None,
+    route_environment: bool = False,
 ) -> FastAPI:
     settings = settings or load_settings()
     # Every yt-dlp request goes through this proxy; it enforces the private-network block.
     # An app built with injected fakes (tests) never touches the network, so it starts none.
     own_egress = egress is None and (manager is None or info_fetcher is None)
     if own_egress:
-        egress = EgressProxy()
+        egress = EgressProxy(max_response_bytes=settings.max_filesize_bytes)
+    # A second proxy with a small byte cap serves /api/info.
+    info_egress = EgressProxy(max_response_bytes=INFO_RESPONSE_CAP) if own_egress else None
     proxy_url = (lambda: egress.url) if egress is not None else (lambda: None)
+    info_proxy_url = (lambda: info_egress.url) if info_egress is not None else proxy_url
 
     if manager is None:
         root = Path(tempfile.gettempdir())
@@ -166,30 +199,49 @@ def create_app(
         )
     if info_fetcher is None:
         def info_fetcher(url: str) -> dict:
-            return fetch_info(url, proxy=proxy_url(), js_runtimes=js_runtimes_option())
+            return fetch_info(url, proxy=info_proxy_url(), js_runtimes=js_runtimes_option())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        restore_environment = None
         if own_egress:
             egress.start()
+            info_egress.start()
+            if route_environment:
+                # ffmpeg and a few handlers read proxy variables: make sure they only see ours.
+                restore_environment = route_environment_through(egress.url)
         manager.start_sweeper()
         yield
         manager.shutdown()
         if own_egress:
             egress.stop()
+            info_egress.stop()
+        if restore_environment:
+            restore_environment()
 
     app = FastAPI(title="VideoDownloader", version=__version__, lifespan=lifespan)
+    app.state.egress = egress
+    app.state.info_egress = info_egress
 
     allowed = frozenset(host.lower() for host in allowed_hosts)
 
     @app.middleware("http")
     async def _host_and_origin_check(request: Request, call_next):
         # Blocks DNS-rebinding pages (foreign Host) and cross-origin POSTs (foreign Origin).
-        if _hostname_of_host_header(request.headers.get("host", "")) not in allowed:
+        host_value = request.headers.get("host", "")
+        if _hostname_of_host_header(host_value) not in allowed or _port_of_host_header(host_value) is None:
             return JSONResponse(status_code=403, content={"detail": "host not allowed"})
         origin = request.headers.get("origin")
         if origin is not None and request.method not in SAFE_METHODS:
-            if _hostname_of_origin(origin) not in allowed:
+            # Same site as the page that is calling: a local host AND the same port. Another
+            # web app on localhost:<other port> is a different origin and is not trusted.
+            host_header = request.headers.get("host", "")
+            same_origin = (
+                _hostname_of_origin(origin) == _hostname_of_host_header(host_header)
+                and _port_of_origin(origin) == _port_of_host_header(host_header)
+                and _port_of_origin(origin) is not None
+            )
+            if _hostname_of_origin(origin) not in allowed or not same_origin:
                 return JSONResponse(status_code=403, content={"detail": "origin not allowed"})
         return await call_next(request)
 
@@ -284,6 +336,18 @@ def create_app(
     if serve_web and WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app
+
+
+def server_app() -> FastAPI:
+    """Entry point of the real server (`uvicorn app.main:server_app --factory`, used by run.cmd).
+
+    create_app stays free of process-wide side effects so tests can build many apps; this one
+    adds the memory cap and routes child processes through the egress proxy.
+    """
+    settings = load_settings()
+    if not limit_process_memory(settings.max_memory_bytes):
+        log.warning("running without a memory cap")
+    return create_app(settings=settings, route_environment=True)
 
 
 def contract() -> dict:

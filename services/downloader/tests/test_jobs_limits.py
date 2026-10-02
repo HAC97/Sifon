@@ -95,7 +95,7 @@ def test_create_is_refused_when_free_disk_is_below_the_minimum(make_manager):
     with pytest.raises(DownloadFailure) as exc:
         manager.create("https://example.com/v", "video")
     assert exc.value.code == ErrorCode.DISK_FULL
-    assert list(manager.base_dir.iterdir()) == []  # nothing was created
+    assert [p.name for p in manager.base_dir.iterdir()] == [".alive"]  # no job folder was created
 
 
 def test_disk_running_out_mid_download_stops_the_job_and_frees_its_files(make_manager):

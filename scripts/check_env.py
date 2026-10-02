@@ -162,7 +162,7 @@ def check_settings() -> list[Result]:
             "OK",
             "limites",
             f"{s.max_concurrent} simultáneas, cola {s.max_queue}, {s.max_filesize_mb} MB, "
-            f"{s.max_duration_min} min, {s.min_free_disk_mb} MB libres",
+            f"{s.max_duration_min} min, {s.min_free_disk_mb} MB libres, memoria {s.max_memory_mb} MB",
         )
     ]
 

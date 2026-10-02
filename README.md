@@ -104,13 +104,14 @@ Para que una descarga no sature tu equipo, sifón impone límites. Se cambian co
 | `SIFON_MAX_DURATION_MIN` | 180 | duración del video; las transmisiones en vivo se rechazan (`TOO_LONG`) |
 | `SIFON_MIN_FREE_DISK_MB` | 1024 | espacio libre mínimo; por debajo no se acepta ni se sigue una descarga (`DISK_FULL`) |
 | `SIFON_TTL_MINUTES` | 30 | cuánto dura un archivo terminado antes de borrarse |
+| `SIFON_MAX_MEMORY_MB` | 4096 | memoria máxima del servidor (Windows). Una página hostil que no termina nunca no puede agotar la RAM de tu equipo: la descarga falla en su lugar |
 
 ```powershell
 $env:SIFON_MAX_FILESIZE_MB = "500"; $env:SIFON_MAX_DURATION_MIN = "30"
 .\run.cmd
 ```
 
-En `cmd.exe`: `set SIFON_MAX_FILESIZE_MB=500` y después `run.cmd`. Un valor que no es un entero positivo hace que `run.cmd` se detenga con el nombre de la variable. El límite de tamaño se aplica a cada archivo descargado: un video con audio separado baja dos, así que el total puede acercarse al doble. El límite de espacio libre se mide en la unidad de la carpeta temporal.
+En `cmd.exe`: `set SIFON_MAX_FILESIZE_MB=500` y después `run.cmd`. Un valor que no es un entero positivo hace que `run.cmd` se detenga con el nombre de la variable. El límite de tamaño se aplica a cada archivo descargado: un video con audio separado baja dos, así que el total puede acercarse al doble. El límite de espacio libre se mide en la unidad de la carpeta temporal y se comprueba mientras se descarga, no durante la conversión final de ffmpeg.
 
 ## Archivos temporales
 
@@ -151,7 +152,7 @@ Si nada de esto ayuda, abrí un reporte con la plantilla de **Issues** del repos
 ## Seguridad
 
 - El servidor escucha únicamente en `127.0.0.1` y rechaza pedidos cuyo `Host` u `Origin` no sean locales (protege de páginas web que intenten usarlo desde tu navegador).
-- Todo el tráfico de yt-dlp pasa por un proxy interno que resuelve cada nombre una sola vez y **rechaza cualquier destino que no sea una dirección pública**, incluidas las redirecciones y los cambios de DNS (la protección contra acceder a tu red local o a `127.0.0.1` a través de un enlace). Si usabas un proxy de empresa para salir a internet, esta versión no lo respeta.
+- Todo el tráfico de yt-dlp pasa por un proxy interno que resuelve cada nombre una sola vez y **rechaza cualquier destino que no sea una dirección pública**, incluidas las redirecciones y los cambios de DNS (la protección contra acceder a tu red local o a `127.0.0.1` a través de un enlace). Si usabas un proxy de empresa para salir a internet, esta versión no lo respeta, y mientras corre ignora las variables `NO_PROXY` y `ALL_PROXY` de tu entorno (para que ni ffmpeg ni yt-dlp puedan saltarse la protección).
 - **Esta versión no está preparada para exponerse directamente a internet ni a tu red local.** No tiene autenticación. No uses `--host 0.0.0.0`, ni túneles, ni un proxy inverso hacia ella.
 
 Detalles técnicos y cómo reportar una vulnerabilidad: [`services/downloader/README.md`](services/downloader/README.md) y [`SECURITY.md`](SECURITY.md).
