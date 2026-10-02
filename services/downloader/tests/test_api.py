@@ -99,6 +99,16 @@ def test_info_unexpected_exception_never_leaks_url_to_log_or_body(make_client, c
     assert "RuntimeError" in caplog.text
 
 
+def test_lifespan_starts_the_sweeper_and_shutdown_removes_the_base_dir(tmp_path):
+    manager = JobManager(tmp_path / "lifespan", ok_runner)
+    app = create_app(manager=manager, info_fetcher=fake_info, url_validator=lambda u: u, serve_web=False)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        assert client.get("/api/health").status_code == 200
+        assert manager.base_dir.exists()
+        assert manager._sweeper is not None and manager._sweeper.is_alive()
+    assert not manager.base_dir.exists()
+
+
 INFO_BODY = {"url": "https://example.com/v"}
 
 
