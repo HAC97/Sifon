@@ -1,0 +1,51 @@
+# VideoDownloader
+
+Descargador de videos y audio local, parecido a cobalt. Pegás una URL, elegís video (con calidad) o solo audio (mp3, m4a u opus) y bajás el archivo. Corre en tu máquina: backend FastAPI + yt-dlp, interfaz web simple.
+
+Descargá solo contenido sobre el que tengas derecho a hacerlo y respetá los términos de cada sitio.
+
+## Requisitos
+
+- Windows con PowerShell
+- Python 3 (probado con 3.12)
+- `ffmpeg` y `ffprobe` en el `PATH`
+
+## Instalación
+
+```powershell
+python -m venv services\downloader\.venv
+services\downloader\.venv\Scripts\python.exe -m pip install -r services\downloader\requirements.txt
+```
+
+Para correr los tests, instalá además `services\downloader\requirements-dev.txt` con el mismo `pip install -r`.
+
+Si ya tenías un entorno viejo, volvé a correr el `pip install -r` de arriba: `requirements.txt` instala `yt-dlp[default,curl-cffi]` y `curl-cffi` hace falta para sitios como Dailymotion.
+
+## Arranque
+
+```powershell
+.\scripts\run.ps1
+```
+
+Abrí `http://127.0.0.1:8000`. Para otro puerto: `.\scripts\run.ps1 -Port 8765`. El servidor escucha solo en `127.0.0.1`.
+
+## Actualizar yt-dlp
+
+yt-dlp se rompe cuando un sitio cambia. Para actualizarlo:
+
+```powershell
+.\scripts\update-ytdlp.ps1
+```
+
+Después reiniciá la app.
+
+## Estructura
+
+```
+contracts/api.openapi.json   contrato HTTP (generado)
+scripts/                     run.ps1, update-ytdlp.ps1, gen_contract.py
+services/downloader/         backend, tests y evals (ver su README)
+web/                         interfaz (index.html, app.js, style.css)
+```
+
+Más detalle (endpoints, tests, límites conocidos): `services/downloader/README.md`.
