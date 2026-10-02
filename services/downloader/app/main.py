@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable, Literal
@@ -14,9 +16,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.errors import DownloadFailure, ErrorCode
+from app import __version__
+from app.config import Settings, load_settings
+from app.egress_proxy import EgressProxy
+from app.errors import HTTP_STATUS, DownloadFailure, ErrorCode
 from app.extractor import fetch_info
 from app.jobs import JobManager
+from app.runtimes import detect_js_runtime, js_runtimes_option
 from app.urlcheck import validate_url
 from app.ytdlp_runner import run_download
 
@@ -52,7 +58,7 @@ class JobCreated(BaseModel):
 
 
 class JobStatus(BaseModel):
-    status: Literal["queued", "downloading", "processing", "done", "error"]
+    status: Literal["queued", "downloading", "processing", "done", "error", "cancelled"]
     percent: float
     speed: float | None = None
     eta: float | None = None
@@ -63,8 +69,15 @@ class JobStatus(BaseModel):
 
 class HealthResponse(BaseModel):
     ok: bool
+    version: str
     ytdlp_version: str
     ffmpeg: bool
+    ffprobe: bool
+    js_runtime: Literal["deno", "node"] | None = None
+    max_filesize_mb: int
+    max_duration_min: int
+    max_concurrent: int
+    max_queue: int
 
 
 class ErrorBody(BaseModel):
@@ -94,25 +107,74 @@ def _hostname_of_origin(origin: str) -> str:
     return f"[{hostname}]" if ":" in hostname else hostname
 
 
+TEMP_PREFIX = "sifon-"
+STALE_AFTER_SECONDS = 24 * 3600
+
+
+def _sweep_stale_temp_dirs(root: Path, keep: Path) -> None:
+    """Remove temp dirs left by a crashed run (not ours, untouched for a day)."""
+    cutoff = time.time() - STALE_AFTER_SECONDS
+    for entry in root.glob(f"{TEMP_PREFIX}*"):
+        try:
+            if entry != keep and entry.is_dir() and entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            continue
+
+
 def create_app(
     manager: JobManager | None = None,
-    info_fetcher: Callable[[str], dict] = fetch_info,
+    info_fetcher: Callable[[str], dict] | None = None,
     url_validator: Callable[[str], str] = validate_url,
     serve_web: bool = True,
     allowed_hosts: tuple[str, ...] = DEFAULT_ALLOWED_HOSTS,
+    settings: Settings | None = None,
+    egress: EgressProxy | None = None,
 ) -> FastAPI:
+    settings = settings or load_settings()
+    # Every yt-dlp request goes through this proxy; it enforces the private-network block.
+    # An app built with injected fakes (tests) never touches the network, so it starts none.
+    own_egress = egress is None and (manager is None or info_fetcher is None)
+    if own_egress:
+        egress = EgressProxy()
+    proxy_url = (lambda: egress.url) if egress is not None else (lambda: None)
+
     if manager is None:
-        base = Path(tempfile.gettempdir()) / "videodownloader"
+        root = Path(tempfile.gettempdir())
+        base = root / f"{TEMP_PREFIX}{os.getpid()}"
         shutil.rmtree(base, ignore_errors=True)
-        manager = JobManager(base, run_download, log_path=SERVICE_DIR / "jobs.log")
+        _sweep_stale_temp_dirs(root, keep=base)
+
+        def runner(job, on_progress):
+            return run_download(
+                job, on_progress, proxy=proxy_url(), max_duration_s=settings.max_duration_min * 60
+            )
+
+        manager = JobManager(
+            base,
+            runner,
+            max_workers=settings.max_concurrent,
+            ttl_seconds=settings.ttl_minutes * 60,
+            log_path=SERVICE_DIR / "jobs.log",
+            max_queue=settings.max_queue,
+            max_filesize_bytes=settings.max_filesize_bytes,
+            min_free_disk_bytes=settings.min_free_disk_bytes,
+        )
+    if info_fetcher is None:
+        def info_fetcher(url: str) -> dict:
+            return fetch_info(url, proxy=proxy_url(), js_runtimes=js_runtimes_option())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        if own_egress:
+            egress.start()
         manager.start_sweeper()
         yield
         manager.shutdown()
+        if own_egress:
+            egress.stop()
 
-    app = FastAPI(title="VideoDownloader", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="VideoDownloader", version=__version__, lifespan=lifespan)
 
     allowed = frozenset(host.lower() for host in allowed_hosts)
 
@@ -130,7 +192,7 @@ def create_app(
     @app.exception_handler(DownloadFailure)
     async def _download_failure(_request, exc: DownloadFailure):
         return JSONResponse(
-            status_code=400,
+            status_code=HTTP_STATUS.get(exc.code, 400),
             content={"error_code": exc.code.value, "error_message": exc.message},
         )
 
@@ -138,8 +200,15 @@ def create_app(
     def health():
         return {
             "ok": True,
+            "version": __version__,
             "ytdlp_version": yt_dlp.version.__version__,
             "ffmpeg": shutil.which("ffmpeg") is not None,
+            "ffprobe": shutil.which("ffprobe") is not None,
+            "js_runtime": detect_js_runtime(),
+            "max_filesize_mb": settings.max_filesize_mb,
+            "max_duration_min": settings.max_duration_min,
+            "max_concurrent": settings.max_concurrent,
+            "max_queue": settings.max_queue,
         }
 
     @app.post("/api/info", response_model=InfoResponse, responses={400: {"model": ErrorBody}})
@@ -158,7 +227,11 @@ def create_app(
         "/api/jobs",
         response_model=JobCreated,
         status_code=202,
-        responses={400: {"model": ErrorBody}},
+        responses={
+            400: {"model": ErrorBody},
+            429: {"model": ErrorBody, "description": "Too many jobs running or queued"},
+            507: {"model": ErrorBody, "description": "Not enough free disk space"},
+        },
     )
     def create_job(req: JobRequest):
         url = url_validator(req.url)
@@ -172,6 +245,18 @@ def create_app(
     )
     def job_status(job_id: str):
         job = manager.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return job.snapshot()
+
+    @app.delete(
+        "/api/jobs/{job_id}",
+        response_model=JobStatus,
+        responses={404: {"description": "Unknown job"}},
+    )
+    def cancel_job(job_id: str):
+        """Cancel a queued or running job. A finished job is discarded together with its file."""
+        job = manager.cancel(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="job not found")
         return job.snapshot()

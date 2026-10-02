@@ -21,6 +21,9 @@ def ytdlp_options(
     outtmpl: str,
     progress_hook,
     postprocessor_hook=None,
+    proxy: str | None = None,
+    match_filter=None,
+    js_runtimes: dict | None = None,
 ) -> dict:
     opts = {
         "outtmpl": outtmpl,
@@ -35,6 +38,12 @@ def ytdlp_options(
     }
     if postprocessor_hook is not None:
         opts["postprocessor_hooks"] = [postprocessor_hook]
+    if proxy:
+        opts["proxy"] = proxy
+    if match_filter is not None:
+        opts["match_filter"] = match_filter
+    if js_runtimes is not None:
+        opts["js_runtimes"] = js_runtimes
 
     if mode == "video":
         opts["format"] = video_selector(height)

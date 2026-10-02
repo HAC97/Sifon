@@ -29,7 +29,7 @@ def summarize_info(raw: dict) -> dict:
     }
 
 
-def fetch_info(url: str, ytdlp_cls=yt_dlp.YoutubeDL) -> dict:
+def fetch_info(url: str, ytdlp_cls=yt_dlp.YoutubeDL, proxy: str | None = None, js_runtimes: dict | None = None) -> dict:
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -38,6 +38,10 @@ def fetch_info(url: str, ytdlp_cls=yt_dlp.YoutubeDL) -> dict:
         "skip_download": True,
         "socket_timeout": 20,
     }
+    if proxy:
+        opts["proxy"] = proxy
+    if js_runtimes is not None:
+        opts["js_runtimes"] = js_runtimes
     try:
         with ytdlp_cls(opts) as ydl:
             raw = ydl.extract_info(url, download=False)

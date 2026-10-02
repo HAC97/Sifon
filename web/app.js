@@ -59,9 +59,10 @@ function setBusy(busy) {
   $("fetch").disabled = busy;
   $("paste").disabled = busy;
   $("download").disabled = busy;
-  // The x cannot interrupt a download: it is off while one runs and says why.
+  // The x does not touch a running download: it is off while one runs and says why.
+  // "Cancelar descarga" is the way to stop it.
   $("clear").disabled = busy;
-  $("clear").title = busy ? "Esperá a que termine la descarga" : "Borrar y buscar otro";
+  $("clear").title = busy ? "Esperá a que termine la descarga o cancelala" : "Borrar y buscar otro";
   document.body.classList.toggle("busy", busy);
 }
 
@@ -99,6 +100,7 @@ function setProgress(percent, text, detail = "", instant = false) {
 }
 
 let lastJobId = null;
+let activeJobId = null;
 let locked = false;
 
 function selectedMode() {
@@ -178,10 +180,25 @@ function triggerDownload(jobId) {
 }
 
 async function pollJob(jobId) {
+  activeJobId = jobId;
+  show($("cancel"), true);
+  try {
+    await pollUntilFinished(jobId);
+  } finally {
+    activeJobId = null;
+    show($("cancel"), false);
+  }
+}
+
+async function pollUntilFinished(jobId) {
   for (;;) {
     const job = await api(`/api/jobs/${jobId}`);
     if (job.status === "error") {
       throw new Error(job.error_message || "Falló la descarga.");
+    }
+    if (job.status === "cancelled") {
+      setProgress(0, "Descarga cancelada", "", true);
+      return;
     }
     if (job.status === "done") {
       setProgress(100, `Listo: ${job.filename}`);
@@ -246,6 +263,18 @@ $("url").addEventListener("paste", () => {
   setTimeout(() => {
     if (/^https?:\/\//i.test($("url").value.trim())) $("url-form").requestSubmit();
   }, 0);
+});
+
+$("cancel").addEventListener("click", async () => {
+  if (!activeJobId) return;
+  $("cancel").disabled = true;
+  try {
+    await api(`/api/jobs/${activeJobId}`, { method: "DELETE" });
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    $("cancel").disabled = false;
+  }
 });
 
 $("again").addEventListener("click", () => {

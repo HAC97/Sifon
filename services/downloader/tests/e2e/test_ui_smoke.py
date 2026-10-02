@@ -26,6 +26,11 @@ def fake_runner(job, on_progress):
     if "fail" in job.url:
         raise DownloadFailure(ErrorCode.NETWORK)
     on_progress({"status": "downloading", "downloaded_bytes": 50, "total_bytes": 100, "speed": 1000.0, "eta": 1})
+    if "hang" in job.url:  # runs until cancelled: the progress hook raises CANCELLED
+        for _ in range(500):
+            time.sleep(0.02)
+            on_progress({"status": "downloading", "downloaded_bytes": 50, "total_bytes": 100})
+        raise DownloadFailure(ErrorCode.NETWORK)
     time.sleep(0.5)
     path = job.dir / ("clip.mp3" if job.mode == "audio" else "clip.mp4")
     path.write_bytes(b"data")
@@ -284,3 +289,19 @@ def test_clear_button_comes_back_when_a_download_fails(server, page):
     page.click("#clear")
     assert not page.is_visible("#card") and not page.is_visible("#error")
     assert page.input_value("#url") == ""
+
+
+def test_cancel_button_stops_a_running_download_and_frees_the_page(server, page):
+    page.goto(server)
+    page.fill("#url", "https://hang.example/v")
+    page.click("#fetch")
+    page.wait_for_selector("#card:not([hidden])")
+    assert not page.is_visible("#cancel")
+    page.click("#download")
+    page.wait_for_selector("#cancel:not([hidden])")
+    page.click("#cancel")
+    page.wait_for_function("document.getElementById('status').textContent.includes('cancelada')")
+    assert not page.is_visible("#cancel")
+    assert not page.is_visible("#error")
+    assert page.is_enabled("#download") and page.is_enabled("#clear")
+    assert not page.is_visible("#again")  # there is no file to offer again
