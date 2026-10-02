@@ -1,5 +1,5 @@
 ﻿; Inno Setup script for sifón. Built by packaging/build.py --installer, which passes:
-;   /DAppVersion=0.2.0 /DSourceDir=<dist\sifon> /DOutputDir=<dist> /DIconFile=<build\sifon.ico>
+;   /DAppVersion=0.2.1 /DSourceDir=<dist\sifon> /DOutputDir=<dist> /DIconFile=<build\sifon.ico>
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif

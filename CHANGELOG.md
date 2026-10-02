@@ -4,6 +4,12 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado
 
 ## [Sin publicar]
 
+## [0.2.1] - 2026-10-02
+
+### Corregido
+
+- **Videos HLS que Google Drive rechazaba ("formato no válido")**: algunos sitios anteponen un PNG falso de 1×1 al stream, así que el archivo `.mp4` era en realidad MPEG-TS. ffprobe lo veía como `png_pipe` y el arreglo propio de yt-dlp (que exige `mpegts`) se omitía sin avisar. Ahora `app/mp4_repair.py` detecta el MPEG-TS al terminar la descarga y lo remuxa a un mp4 real con ffmpeg, sin recodificar y sin necesitar ffprobe. Si el remux falla, la descarga da error en vez de entregar un archivo roto. Tests: `tests/test_mp4_repair.py`.
+
 ### Agregado
 
 - `packaging/winget/make_manifest.py`: genera, a partir del propio release (URL y `SHA256SUMS.txt`), los cuatro archivos del manifiesto de winget (`HAC97.sifon`), con tests; el resultado pasa `winget validate` sin advertencias. Guía en `packaging/winget/README.md`.
@@ -13,7 +19,7 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado
 
 - El repositorio pasó a llamarse `HAC97/Sifon`: URLs actualizadas.
 
-## [0.2.0] - sin fecha (pendiente de etiquetar)
+## [0.2.0] - 2026-10-02
 
 Primera versión con **ejecutable para Windows**: se baja el instalador desde Releases y no hace falta instalar nada más.
 

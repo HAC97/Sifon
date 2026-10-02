@@ -194,7 +194,7 @@ Detalles técnicos y cómo reportar una vulnerabilidad: [`services/downloader/RE
 
 ## Versiones probadas y limitaciones
 
-El paquete de Windows (v0.2.0) incluye Python 3.12.10, PyInstaller 6.22.3, FFmpeg/FFprobe n9.0.2 (compilación LGPL de BtbN) y Deno 2.9.7, además de yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0 y curl-cffi 0.16.3. Todo lo demás se probó el 2026-10-02 en Windows 11 Home (compilación 10.0.26300), con Python 3.12.10, FFmpeg/FFprobe 8.1.1 y 9.0.2, Deno 2.9.7, Node.js 24.13.1, yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0, curl-cffi 0.16.3 y FastAPI 0.142.2. Otras versiones de Python (3.10, 3.11, 3.13) y de Windows no se probaron. Los resultados de las pruebas y las limitaciones están en [`CHANGELOG.md`](CHANGELOG.md) y en [`docs/release-notes-v0.1.0.md`](docs/release-notes-v0.1.0.md).
+El paquete de Windows (v0.2.1) incluye Python 3.12.10, PyInstaller 6.22.3, FFmpeg/FFprobe n9.0.2 (compilación LGPL de BtbN) y Deno 2.9.7, además de yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0 y curl-cffi 0.16.3. Todo lo demás se probó el 2026-10-02 en Windows 11 Home (compilación 10.0.26300), con Python 3.12.10, FFmpeg/FFprobe 8.1.1 y 9.0.2, Deno 2.9.7, Node.js 24.13.1, yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0, curl-cffi 0.16.3 y FastAPI 0.142.2. Otras versiones de Python (3.10, 3.11, 3.13) y de Windows no se probaron. Los resultados de las pruebas y las limitaciones están en [`CHANGELOG.md`](CHANGELOG.md) y en [`docs/release-notes-v0.1.0.md`](docs/release-notes-v0.1.0.md).
 
 ## Estructura
 
