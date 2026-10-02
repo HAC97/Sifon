@@ -140,6 +140,11 @@ class JobManager:
             self._finish(job, "cancelled", ErrorCode.CANCELLED, USER_MESSAGES[ErrorCode.CANCELLED])
         return job
 
+    def active_count(self) -> int:
+        """Jobs that are queued or running (what a user would lose by closing the app)."""
+        with self._lock:
+            return sum(1 for job in self._jobs.values() if job.active)
+
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)

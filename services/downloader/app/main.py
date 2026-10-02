@@ -24,12 +24,13 @@ from app.errors import HTTP_STATUS, DownloadFailure, ErrorCode
 from app.extractor import fetch_info
 from app.hardening import limit_process_memory, route_environment_through
 from app.jobs import ALIVE_FILE, JobManager
+from app.paths import SERVICE_DIR, jobs_log_path, web_dir
 from app.runtimes import detect_js_runtime, js_runtimes_option
 from app.urlcheck import validate_url
 from app.ytdlp_runner import run_download
 
-SERVICE_DIR = Path(__file__).resolve().parents[1]
-WEB_DIR = Path(__file__).resolve().parents[3] / "web"
+WEB_DIR = web_dir()
+__all__ = ["create_app", "server_app", "contract", "SERVICE_DIR", "WEB_DIR"]
 
 log = logging.getLogger("videodownloader")
 
@@ -192,7 +193,7 @@ def create_app(
             runner,
             max_workers=settings.max_concurrent,
             ttl_seconds=settings.ttl_minutes * 60,
-            log_path=SERVICE_DIR / "jobs.log",
+            log_path=jobs_log_path(),
             max_queue=settings.max_queue,
             max_filesize_bytes=settings.max_filesize_bytes,
             min_free_disk_bytes=settings.min_free_disk_bytes,
@@ -220,6 +221,7 @@ def create_app(
             restore_environment()
 
     app = FastAPI(title="VideoDownloader", version=__version__, lifespan=lifespan)
+    app.state.manager = manager
     app.state.egress = egress
     app.state.info_egress = info_egress
 

@@ -56,3 +56,8 @@ node_modules/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Windows package build output (packaging/build.py)
+/build/
+/dist/
+*.spec.bak
