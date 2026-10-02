@@ -11,7 +11,7 @@ Descargador local de video y audio para Windows. Pegás el enlace de un video, e
 
 ## Descargar e instalar (recomendado)
 
-No hace falta instalar Python, FFmpeg ni nada más: **todo viene incluido**. Entrá a [Releases](https://github.com/HAC97/Tifon/releases/latest) y bajá uno de estos archivos:
+No hace falta instalar Python, FFmpeg ni nada más: **todo viene incluido**. Entrá a [Releases](https://github.com/HAC97/Sifon/releases/latest) y bajá uno de estos archivos:
 
 | Archivo | Para quién |
 |---|---|
@@ -208,6 +208,28 @@ web/                               interfaz (index.html, app.js, style.css)
 ```
 
 Desarrollo y tests: [`services/downloader/README.md`](services/downloader/README.md). Componentes de terceros: [`THIRD_PARTY.md`](THIRD_PARTY.md).
+
+## Privacidad
+
+sifón **no envía datos tuyos a nadie** y no tiene telemetría ni cuentas.
+
+- Las descargas las hace tu computadora, directo a los sitios cuyos enlaces pegás.
+- El paquete de Windows consulta **una vez por día** `pypi.org` y `files.pythonhosted.org` para ver si hay una versión nueva de yt-dlp. Esa consulta no lleva ningún dato tuyo (PyPI ve tu dirección IP, como con cualquier descarga). Se apaga con la casilla de la ventana o con `SIFON_NO_AUTO_UPDATE=1`. El modo de código fuente no consulta nada por su cuenta.
+- Los registros (`%LOCALAPPDATA%\sifon\logs`, y `jobs.log`, que guarda solo el dominio de cada sitio, nunca el enlace completo) quedan en tu equipo. Podés borrarlos cuando quieras.
+- El instalador no se conecta a internet.
+
+## Política de firma de código
+
+**Estado:** el instalador y `sifon.exe` **todavía no están firmados**. Esta política describe cómo se firmarán cuando [SignPath Foundation](https://signpath.org) apruebe el proyecto; hasta entonces, los archivos se comprueban con `SHA256SUMS.txt` (ver [Descargar e instalar](#descargar-e-instalar-recomendado)).
+
+Cuando esté activa:
+
+- Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+- Se firman **solo** los binarios construidos por el flujo [`release.yml`](.github/workflows/release.yml) a partir del código de este repositorio (`sifon.exe` y el instalador). Los componentes de terceros que trae el paquete (FFmpeg, Deno) no se firman con este certificado.
+- Cada firma requiere una **aprobación manual** de una persona; el flujo de publicación nunca firma solo.
+- Roles: proyecto de una sola persona. **Committer, revisor y aprobador de firmas:** [HAC97](https://github.com/HAC97).
+- Privacidad: ver la sección anterior. El programa no transfiere datos a nadie sin tu consentimiento.
+- Desinstalación: *Configuración > Aplicaciones > sifón*, o `unins000.exe` en la carpeta de instalación.
 
 ## Licencia
 
