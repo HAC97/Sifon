@@ -96,9 +96,46 @@ function setProgress(percent, text, detail = "", instant = false) {
 }
 
 let lastJobId = null;
+let locked = false;
+// Bumped by every reset. A download that started in an earlier session stops quietly:
+// it neither updates the screen nor saves the file.
+let session = 0;
 
 function selectedMode() {
   return document.querySelector('input[name="mode"]:checked').value;
+}
+
+function syncModeOptions() {
+  const audio = selectedMode() === "audio";
+  show($("video-opt"), !audio);
+  show($("audio-opt"), audio);
+}
+
+// Once the video is found the link is fixed and the x is the only way to start over.
+function setLocked(on) {
+  locked = on;
+  $("url").readOnly = on;
+  $("url-form").classList.toggle("locked", on);
+  show($("paste"), !on);
+  show($("fetch"), !on);
+  show($("clear"), on);
+}
+
+function resetToSearch() {
+  session += 1;
+  setBusy(false);
+  setLocked(false);
+  $("url").value = "";
+  showError("");
+  show($("card"), false);
+  show($("progress"), false);
+  show($("again"), false);
+  setProgress(0, "", "", true);
+  lastJobId = null;
+  document.querySelector('input[name="mode"][value="video"]').checked = true;
+  $("audio-format").value = "mp3";
+  syncModeOptions();
+  $("url").focus();
 }
 
 function renderInfo(info) {
@@ -130,6 +167,7 @@ function renderInfo(info) {
   show($("progress"), false);
   show($("again"), false);
   show($("card"), true);
+  setLocked(true);
 }
 
 function triggerDownload(jobId) {
@@ -141,9 +179,11 @@ function triggerDownload(jobId) {
   link.remove();
 }
 
-async function pollJob(jobId) {
+async function pollJob(jobId, mine) {
   for (;;) {
+    if (session !== mine) return;
     const job = await api(`/api/jobs/${jobId}`);
+    if (session !== mine) return;
     if (job.status === "error") {
       throw new Error(job.error_message || "Falló la descarga.");
     }
@@ -167,6 +207,7 @@ async function pollJob(jobId) {
 
 $("url-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (locked) return; // Enter in the fixed link must not search again
   showError("");
   show($("card"), false);
   setBusy(true);
@@ -182,12 +223,10 @@ $("url-form").addEventListener("submit", async (event) => {
 });
 
 for (const radio of document.querySelectorAll('input[name="mode"]')) {
-  radio.addEventListener("change", () => {
-    const audio = selectedMode() === "audio";
-    show($("video-opt"), !audio);
-    show($("audio-opt"), audio);
-  });
+  radio.addEventListener("change", syncModeOptions);
 }
+
+$("clear").addEventListener("click", resetToSearch);
 
 $("paste").addEventListener("click", async () => {
   showError("");
@@ -218,6 +257,7 @@ $("again").addEventListener("click", () => {
 });
 
 $("download").addEventListener("click", async () => {
+  const mine = session;
   showError("");
   setBusy(true);
   show($("again"), false);
@@ -230,11 +270,13 @@ $("download").addEventListener("click", async () => {
       height: $("height").value || "best",
       audio_format: $("audio-format").value,
     });
-    await pollJob(jobId);
+    await pollJob(jobId, mine);
   } catch (error) {
+    if (session !== mine) return;
     showError(error.message);
     show($("progress"), false);
   } finally {
-    setBusy(false);
+    // After a reset the busy state already belongs to the new session; leave it alone.
+    if (session === mine) setBusy(false);
   }
 });

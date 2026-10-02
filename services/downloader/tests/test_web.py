@@ -9,7 +9,7 @@ from app.main import WEB_DIR, create_app
 # Ids that tests/e2e/test_ui_smoke.py and web/app.js rely on. If the page is redesigned again,
 # these must survive or both sides are updated together.
 REQUIRED_IDS = {
-    "url-form", "url", "paste", "fetch", "error", "card", "thumb", "title", "byline",
+    "url-form", "url", "paste", "fetch", "clear", "error", "card", "thumb", "title", "byline",
     "height", "audio-format", "video-opt", "audio-opt", "download", "progress",
     "pct", "status", "detail", "bar", "again",
 }

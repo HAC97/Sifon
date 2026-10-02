@@ -29,6 +29,11 @@
 
     <form id="url-form" class="drop" autocomplete="off">
       <input id="url" type="url" placeholder="Pegá el enlace del video" required aria-label="Enlace del video">
+      <button id="clear" class="icon-btn" type="button" aria-label="Borrar el enlace y buscar otro video" title="Borrar y buscar otro" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+          <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button id="paste" class="btn ghost" type="button">Pegar</button>
       <button id="fetch" class="btn primary" type="submit">Buscar</button>
     </form>

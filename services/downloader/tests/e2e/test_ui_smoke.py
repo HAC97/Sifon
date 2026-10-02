@@ -19,6 +19,8 @@ TITLE = "<b>Hola</b> & más 😀"
 def fake_info(url):
     if "bad" in url:
         raise DownloadFailure(ErrorCode.UNSUPPORTED_SITE)
+    if "slow" in url:
+        time.sleep(1.5)  # keeps a search in flight long enough to observe the page while it waits
     return {"title": TITLE, "thumbnail": None, "duration": 125, "uploader": "Canal", "heights": [1080, 720]}
 
 
@@ -54,6 +56,7 @@ def page():
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         context = browser.new_context(accept_downloads=True)
+        context.set_default_timeout(10000)  # a missing element fails in 10 s, not 30
         yield context.new_page()
         browser.close()
 
@@ -172,3 +175,115 @@ def test_pasting_a_link_that_is_not_http_does_not_search(server, page):
     page.wait_for_timeout(300)  # negative check: give the handler's timer time to (not) fire
     assert not page.is_visible("#card")
     assert not page.is_visible("#error")
+
+
+def search_another(page, url="https://example.com/other"):
+    """Search again on the SAME page (no reload), to prove the page state was really reset."""
+    page.fill("#url", url)
+    page.click("#fetch")
+    page.wait_for_selector("#card:not([hidden])")
+
+
+def test_url_becomes_fixed_with_a_clear_button_once_the_video_is_found(server, page):
+    page.goto(server)
+    assert not page.is_visible("#clear")
+    assert page.is_visible("#paste") and page.is_visible("#fetch")
+
+    page.fill("#url", "https://example.com/v")
+    page.click("#fetch")
+    page.wait_for_selector("#card:not([hidden])")
+
+    assert page.eval_on_selector("#url", "e => e.readOnly")
+    assert page.is_visible("#clear")
+    assert page.get_attribute("#clear", "aria-label")  # it is an icon, so it needs a name
+    assert not page.is_visible("#paste") and not page.is_visible("#fetch")
+
+    page.click("#url")
+    page.keyboard.type("zzz")
+    assert page.input_value("#url") == "https://example.com/v"
+
+
+def test_enter_in_the_fixed_url_does_not_search_again(server, page):
+    info_requests = []
+    page.on("request", lambda r: info_requests.append(r.url) if r.url.endswith("/api/info") else None)
+    search(page, server)
+    assert len(info_requests) == 1
+
+    page.click("#url")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(300)  # negative check: a second request would have gone out by now
+    assert len(info_requests) == 1
+    assert page.is_visible("#card")
+
+
+def test_clear_button_returns_to_the_search_screen_in_default_mode(server, page):
+    search(page, server)
+    page.check('input[value="audio"]')
+    page.select_option("#audio-format", "opus")
+    page.click("#clear")
+
+    assert page.input_value("#url") == ""
+    assert not page.eval_on_selector("#url", "e => e.readOnly")
+    assert page.evaluate("document.activeElement.id") == "url"
+    assert not page.is_visible("#card")
+    assert not page.is_visible("#error")
+    assert not page.is_visible("#clear")
+    assert page.is_visible("#paste") and page.is_visible("#fetch")
+
+    # the next search starts in the default mode (video), not in the audio mode left behind
+    search_another(page)
+    assert page.is_checked('input[value="video"]')
+    assert page.is_visible("#height") and not page.is_visible("#audio-format")
+    assert page.input_value("#audio-format") == "mp3"  # the audio format is back to its default too
+
+
+def test_clear_button_after_a_finished_download_resets_the_progress(server, page):
+    search(page, server)
+    with page.expect_download(timeout=10000):
+        page.click("#download")
+    page.wait_for_selector("#again:not([hidden])")
+
+    page.click("#clear")
+    assert not page.is_visible("#progress") and not page.is_visible("#again")
+
+    search_another(page)
+    assert not page.is_visible("#progress")
+    assert page.inner_text("#pct") == "0"
+    assert page.is_enabled("#download")
+
+
+def test_clear_button_during_a_download_stops_following_it_without_saving_the_file(server, page):
+    downloads = []
+    page.on("download", lambda d: downloads.append(d))
+    search(page, server)
+    page.click("#download")
+    page.wait_for_selector("#progress:not([hidden])")
+    page.click("#clear")
+
+    page.wait_for_timeout(2500)  # negative check: longer than one poll (1 s) plus the fake runner (0.5 s)
+    assert downloads == []
+    assert not page.is_visible("#card") and not page.is_visible("#progress")
+    assert page.is_enabled("#paste") and page.is_enabled("#fetch")
+
+    # the page is usable right away: a new search and a new download work, and only that one is saved
+    search_another(page)
+    with page.expect_download(timeout=10000) as fresh:
+        page.click("#download")
+    assert Path(fresh.value.path()).read_bytes() == b"data"
+    page.wait_for_timeout(300)
+    assert len(downloads) == 1
+
+
+def test_a_search_started_after_clearing_stays_busy_until_it_ends(server, page):
+    search(page, server)
+    page.click("#download")
+    page.wait_for_selector("#progress:not([hidden])")
+    page.click("#clear")
+    page.fill("#url", "https://slow.example/v")
+    page.click("#fetch")  # the fake server holds this search for 1.5 s
+
+    # The abandoned download's loop wakes up after about 1 s; it must not free the buttons
+    # of the search that is running now.
+    page.wait_for_timeout(1200)
+    assert page.is_disabled("#fetch") and page.is_disabled("#paste")
+    page.wait_for_selector("#card:not([hidden])")
