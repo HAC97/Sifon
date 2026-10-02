@@ -8,9 +8,11 @@ Descargá solo contenido sobre el que tengas derecho a hacerlo y respetá los t�
 
 - Windows con PowerShell
 - Python 3 (probado con 3.12)
-- `ffmpeg` y `ffprobe` en el `PATH`
+- `ffmpeg` en el `PATH` (`ffprobe` suele venir con él; es opcional, ver abajo)
 
 Si falta `ffmpeg`, `/api/health` muestra `"ffmpeg": false` y las descargas fallan con el código `FFMPEG_MISSING`. Una forma de instalarlo en Windows es `winget install Gyan.FFmpeg` (sugerencia, no probada por el autor); después reiniciá la app.
+
+`ffprobe` es opcional: sin él siguen funcionando la extracción de audio (mp3, m4a, opus) y la fusión de video y audio (probado con ffmpeg sin `ffprobe` sobre archivos locales). Según el código de yt-dlp, algunos videos HLS sí lo necesitan (no probado con una descarga real) y en ese caso fallan con `FFMPEG_MISSING`; el eval (`-m eval`) también lo exige para validar los archivos.
 
 ## Instalación
 
