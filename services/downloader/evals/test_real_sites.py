@@ -9,15 +9,30 @@ import pytest
 from app.extractor import fetch_info
 from app.jobs import Job
 from app.ytdlp_runner import run_download
+from evals.scoring import (
+    DEAD_VIMEO_URL,
+    FAIL,
+    KNOWN_DEAD,
+    KNOWN_DEAD_CASES,
+    NETWORK,
+    NETWORK_SHARE_LIMIT,
+    PASS,
+    THRESHOLD,
+    VERDICT_INCONCLUSIVE,
+    VERDICT_PASS,
+    classify_exception,
+    finalize_kind,
+    run_with_retry,
+    summarize,
+)
 
 pytestmark = pytest.mark.eval
 
-THRESHOLD = 0.8
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 # URLs verified on 2026-10-01, see URL_VERIFICATION.md
 YOUTUBE = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
-VIMEO = "https://vimeo.com/56015672"
+VIMEO = DEAD_VIMEO_URL  # known dead, see KNOWN_DEAD_CASES
 SOUNDCLOUD = "https://soundcloud.com/ethmusic/lostin-powers-she-so-heavy"
 ARCHIVE = "https://archive.org/details/Popeye_forPresident"
 DAILYMOTION = "http://www.dailymotion.com/video/x5kesuj"
@@ -80,25 +95,54 @@ def run_case(site, url, mode, audio_format) -> dict:
             )
             path = run_download(job, lambda data: None)
             reason = verify(path, mode, audio_format, info.get("duration"))
-    except Exception as error:  # noqa: BLE001 - any failure is a failed case
+        kind = PASS if reason is None else FAIL  # a bad file is a product failure
+    except Exception as error:  # noqa: BLE001 - classified: network/timeout vs product failure
         reason = f"{type(error).__name__}: {error}"
+        kind = classify_exception(error)
     return {
         "site": site,
         "mode": mode,
         "audio_format": audio_format,
-        "ok": reason is None,
+        "kind": kind,
         "reason": reason,
         "seconds": round(time.time() - started, 1),
     }
 
 
+def run_and_classify(site, url, mode, audio_format) -> dict:
+    result = run_with_retry(lambda: run_case(site, url, mode, audio_format))
+    result["kind"], result["promote"] = finalize_kind(result["kind"], (url, mode) in KNOWN_DEAD_CASES)
+    return result
+
+
+LABEL = {PASS: "PASS", FAIL: "FAIL", NETWORK: "NETWORK", KNOWN_DEAD: "KNOWN_DEAD"}
+
+
 def test_download_success_rate_meets_threshold():
-    results = [run_case(*case) for case in CASES]
+    results = [run_and_classify(*case) for case in CASES]
     RESULTS_DIR.mkdir(exist_ok=True)
     (RESULTS_DIR / "last_run.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
 
     for r in results:
-        print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['site']:12} {r['mode']:6} {r['audio_format']:5} {r['seconds']:6}s  {r['reason'] or ''}")
-    rate = sum(r["ok"] for r in results) / len(results)
-    print(f"success rate: {rate:.0%} (threshold {THRESHOLD:.0%})")
-    assert rate >= THRESHOLD
+        promote = "  PROMOTE" if r["promote"] else ""
+        print(
+            f"{LABEL[r['kind']]:10} {r['site']:12} {r['mode']:6} {r['audio_format']:5} "
+            f"{r['seconds']:6}s  {r['reason'] or ''}{promote}"
+        )
+    summary = summarize(results)
+    print("counts: " + ", ".join(f"{LABEL[k]}={summary.counts[k]}" for k in summary.counts))
+    rate = "n/a" if summary.rate is None else f"{summary.rate:.0%}"
+    print(f"success rate (pass / (pass + fail)): {rate} (threshold {THRESHOLD:.0%})")
+    print(f"network share of active cases: {summary.network_share:.0%} (limit {NETWORK_SHARE_LIMIT:.0%})")
+    print(f"verdict: {summary.verdict}")
+
+    assert not summary.promote, (
+        "known-dead case(s) passed: move them back to the active cases and drop them from KNOWN_DEAD_CASES: "
+        + ", ".join(f"{r['site']}/{r['mode']}" for r in summary.promote)
+    )
+    assert summary.verdict != VERDICT_INCONCLUSIVE, (
+        f"INCONCLUSIVE: network results are {summary.network_share:.0%} of the active cases "
+        f"(limit {NETWORK_SHARE_LIMIT:.0%}). The sites were not reachable, so this run says nothing "
+        "about the product. Re-run when the network is fine."
+    )
+    assert summary.verdict == VERDICT_PASS, f"success rate {rate} is below the {THRESHOLD:.0%} threshold"
