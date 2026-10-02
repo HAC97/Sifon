@@ -4,7 +4,7 @@ Descargador de videos y audio local, parecido a cobalt. Pegás una URL, elegís 
 
 El botón **Pegar** toma el enlace del portapapeles y busca solo (el navegador puede pedirte permiso la primera vez). Si pegás con Ctrl+V dentro del campo un enlace que empieza con `http://` o `https://`, también busca de inmediato.
 
-Cuando el video está listo para descargar, el enlace queda fijo y aparece una **✕** a la derecha. Al hacer clic se borra el enlace y la pantalla vuelve al inicio, en modo video, para buscar otro. Si la apretás con una descarga en curso, la app deja de seguirla y no guarda el archivo; el servidor igual termina de bajarlo y lo borra solo a los 30 minutos.
+Cuando el video está listo para descargar, el enlace queda fijo y aparece una **✕** a la derecha. Al hacer clic se borra el enlace y la pantalla vuelve al inicio, en modo video, para buscar otro. Mientras una descarga está en curso la ✕ queda deshabilitada (el texto emergente lo explica) y se habilita de nuevo cuando termina o falla.
 
 Descargá solo contenido sobre el que tengas derecho a hacerlo y respetá los términos de cada sitio.
 

@@ -59,6 +59,9 @@ function setBusy(busy) {
   $("fetch").disabled = busy;
   $("paste").disabled = busy;
   $("download").disabled = busy;
+  // The x cannot interrupt a download: it is off while one runs and says why.
+  $("clear").disabled = busy;
+  $("clear").title = busy ? "Esperá a que termine la descarga" : "Borrar y buscar otro";
   document.body.classList.toggle("busy", busy);
 }
 
@@ -97,9 +100,6 @@ function setProgress(percent, text, detail = "", instant = false) {
 
 let lastJobId = null;
 let locked = false;
-// Bumped by every reset. A download that started in an earlier session stops quietly:
-// it neither updates the screen nor saves the file.
-let session = 0;
 
 function selectedMode() {
   return document.querySelector('input[name="mode"]:checked').value;
@@ -122,8 +122,6 @@ function setLocked(on) {
 }
 
 function resetToSearch() {
-  session += 1;
-  setBusy(false);
   setLocked(false);
   $("url").value = "";
   showError("");
@@ -179,11 +177,9 @@ function triggerDownload(jobId) {
   link.remove();
 }
 
-async function pollJob(jobId, mine) {
+async function pollJob(jobId) {
   for (;;) {
-    if (session !== mine) return;
     const job = await api(`/api/jobs/${jobId}`);
-    if (session !== mine) return;
     if (job.status === "error") {
       throw new Error(job.error_message || "Falló la descarga.");
     }
@@ -257,7 +253,6 @@ $("again").addEventListener("click", () => {
 });
 
 $("download").addEventListener("click", async () => {
-  const mine = session;
   showError("");
   setBusy(true);
   show($("again"), false);
@@ -270,13 +265,11 @@ $("download").addEventListener("click", async () => {
       height: $("height").value || "best",
       audio_format: $("audio-format").value,
     });
-    await pollJob(jobId, mine);
+    await pollJob(jobId);
   } catch (error) {
-    if (session !== mine) return;
     showError(error.message);
     show($("progress"), false);
   } finally {
-    // After a reset the busy state already belongs to the new session; leave it alone.
-    if (session === mine) setBusy(false);
+    setBusy(false);
   }
 });

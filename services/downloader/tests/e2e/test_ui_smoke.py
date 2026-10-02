@@ -19,12 +19,12 @@ TITLE = "<b>Hola</b> & más 😀"
 def fake_info(url):
     if "bad" in url:
         raise DownloadFailure(ErrorCode.UNSUPPORTED_SITE)
-    if "slow" in url:
-        time.sleep(1.5)  # keeps a search in flight long enough to observe the page while it waits
     return {"title": TITLE, "thumbnail": None, "duration": 125, "uploader": "Canal", "heights": [1080, 720]}
 
 
 def fake_runner(job, on_progress):
+    if "fail" in job.url:
+        raise DownloadFailure(ErrorCode.NETWORK)
     on_progress({"status": "downloading", "downloaded_bytes": 50, "total_bytes": 100, "speed": 1000.0, "eta": 1})
     time.sleep(0.5)
     path = job.dir / ("clip.mp3" if job.mode == "audio" else "clip.mp4")
@@ -252,38 +252,35 @@ def test_clear_button_after_a_finished_download_resets_the_progress(server, page
     assert page.is_enabled("#download")
 
 
-def test_clear_button_during_a_download_stops_following_it_without_saving_the_file(server, page):
-    downloads = []
-    page.on("download", lambda d: downloads.append(d))
+def test_clear_button_is_disabled_while_a_download_runs_and_comes_back_after(server, page):
     search(page, server)
+    assert page.is_enabled("#clear")
     page.click("#download")
     page.wait_for_selector("#progress:not([hidden])")
-    page.click("#clear")
+    assert page.is_disabled("#clear")
+    assert "termine" in page.get_attribute("#clear", "title")  # the tooltip says why
 
-    page.wait_for_timeout(2500)  # negative check: longer than one poll (1 s) plus the fake runner (0.5 s)
-    assert downloads == []
-    assert not page.is_visible("#card") and not page.is_visible("#progress")
-    assert page.is_enabled("#paste") and page.is_enabled("#fetch")
+    # A real mouse click on the disabled button does nothing: the video stays, the link stays fixed.
+    box = page.locator("#clear").bounding_box()
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    assert page.is_visible("#card")
+    assert page.eval_on_selector("#url", "e => e.readOnly")
+    assert page.input_value("#url") == "https://example.com/v"
 
-    # the page is usable right away: a new search and a new download work, and only that one is saved
-    search_another(page)
-    with page.expect_download(timeout=10000) as fresh:
-        page.click("#download")
-    assert Path(fresh.value.path()).read_bytes() == b"data"
-    page.wait_for_timeout(300)
-    assert len(downloads) == 1
+    page.wait_for_selector("#again:not([hidden])")
+    page.wait_for_function("!document.getElementById('clear').disabled")
+    assert "termine" not in page.get_attribute("#clear", "title")
 
 
-def test_a_search_started_after_clearing_stays_busy_until_it_ends(server, page):
-    search(page, server)
-    page.click("#download")
-    page.wait_for_selector("#progress:not([hidden])")
-    page.click("#clear")
-    page.fill("#url", "https://slow.example/v")
-    page.click("#fetch")  # the fake server holds this search for 1.5 s
-
-    # The abandoned download's loop wakes up after about 1 s; it must not free the buttons
-    # of the search that is running now.
-    page.wait_for_timeout(1200)
-    assert page.is_disabled("#fetch") and page.is_disabled("#paste")
+def test_clear_button_comes_back_when_a_download_fails(server, page):
+    page.goto(server)
+    page.fill("#url", "https://fail.example/v")
+    page.click("#fetch")
     page.wait_for_selector("#card:not([hidden])")
+    page.click("#download")
+    page.wait_for_selector("#error:not([hidden])")
+    assert page.is_visible("#card") and page.is_enabled("#clear")
+
+    page.click("#clear")
+    assert not page.is_visible("#card") and not page.is_visible("#error")
+    assert page.input_value("#url") == ""
