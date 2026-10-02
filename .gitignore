@@ -1,7 +1,58 @@
+# Python
 .venv/
+venv/
 __pycache__/
 *.pyc
+*.egg-info/
 .pytest_cache/
+.coverage
+htmlcov/
+
+# What the app writes next to the code
 *.log
 services/downloader/evals/results/
+
+# Secrets and personal data: never commit these
+.env
+.env.*
+*.env
+cookies.txt
+cookies*.txt
+*.cookies
+*.pem
+*.key
+*.p12
+yt-dlp.conf
+yt-dlp.conf.txt
+
+# Downloaded media and yt-dlp partial files (the app keeps them in the system temp folder,
+# but a test or a manual run from the repo folder can leave them here)
+downloads/
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.mp3
+*.m4a
+*.opus
+*.ogg
+*.wav
+*.flac
+*.aac
+*.part
+*.ytdl
+*.temp
+
+# Browser test output
+test-results/
+playwright-report/
 node_modules/
+
+# Editors, OS, local tooling
+.vscode/
+.idea/
+.claude/
+Thumbs.db
+desktop.ini
+.DS_Store

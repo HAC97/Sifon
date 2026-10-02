@@ -1,0 +1,83 @@
+name: Reporte de error
+description: Algo no funciona al instalar, iniciar o descargar.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **No adjuntes cookies, contraseñas, tokens ni enlaces privados o con datos personales.**
+        Si el enlace lleva claves o datos tuyos en la URL, bórralos o reemplázalos por `XXXX`.
+        Si es una falla de seguridad, no uses este formulario: mirá `SECURITY.md`.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Antes de enviar
+      options:
+        - label: Probé `update.cmd` y reinicié sifón; el problema sigue.
+          required: true
+        - label: No adjunté cookies, credenciales ni datos personales.
+          required: true
+  - type: input
+    id: sifon
+    attributes:
+      label: Versión de sifón
+      description: Está en http://127.0.0.1:8000/api/health (campo `version`) o en CHANGELOG.md.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: ytdlp
+    attributes:
+      label: Versión de yt-dlp
+      description: Campo `ytdlp_version` de http://127.0.0.1:8000/api/health (con sifón iniciado).
+      placeholder: 2026.08.19
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Versión de Windows
+      description: Ejecutá `winver`.
+      placeholder: Windows 11 23H2 (compilación 22631)
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Versión de Python
+      description: Ejecutá `py --version`.
+      placeholder: Python 3.12.10
+    validations:
+      required: true
+  - type: textarea
+    id: tools
+    attributes:
+      label: FFmpeg, FFprobe y Deno
+      description: Salida de `ffmpeg -version` (primera línea), `ffprobe -version` (primera línea) y `deno --version`, o "no instalado".
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducirlo
+      description: Qué hiciste, en orden, desde que abriste sifón. Indicá el sitio (por ejemplo youtube.com) y si bajabas video o audio. Sin pasar el enlace completo si es privado.
+      placeholder: |
+        1. Ejecuté run.cmd
+        2. Pegué un enlace de ...
+        3. Elegí "Solo audio" / mp3
+        4. Hice clic en Descargar
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Qué esperabas y qué pasó
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Mensajes de error o salida de la ventana
+      description: Copiá el texto de la ventana de `run.cmd` o de `install.cmd` y el mensaje que muestra la página. Revisalo antes de pegarlo y quitá datos personales.
+      render: text

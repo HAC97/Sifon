@@ -6,8 +6,8 @@ import shutil
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from app.errors import USER_MESSAGES, DownloadFailure, ErrorCode
 
 log = logging.getLogger("videodownloader")
+
+ALIVE_FILE = ".alive"
 
 Runner = Callable[["Job", Callable[[dict], None]], Path]
 
@@ -39,6 +41,12 @@ class Job:
     started_at: float | None = None
     finished_at: float | None = None
     file_path: Path | None = None
+    cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    future: Future | None = field(default=None, repr=False)
+
+    @property
+    def active(self) -> bool:
+        return self.status in ("queued", "downloading", "processing")
 
     def snapshot(self) -> dict:
         return {
@@ -57,10 +65,14 @@ class JobManager:
         self,
         base_dir: Path,
         runner: Runner,
-        max_workers: int = 3,
+        max_workers: int = 2,
         ttl_seconds: float = 1800,
         clock: Callable[[], float] = time.time,
         log_path: Path | None = None,
+        max_queue: int = 10,
+        max_filesize_bytes: int | None = None,
+        min_free_disk_bytes: int = 0,
+        disk_usage: Callable[[Path], object] = shutil.disk_usage,
     ):
         self._base = Path(base_dir)
         self._base.mkdir(parents=True, exist_ok=True)
@@ -68,17 +80,29 @@ class JobManager:
         self._ttl = ttl_seconds
         self._clock = clock
         self._log_path = Path(log_path) if log_path else None
+        self._max_queue = max_queue
+        self._max_filesize = max_filesize_bytes
+        self._min_free = min_free_disk_bytes
+        self._disk_usage = disk_usage
+        self._last_disk_check = 0.0
         self._jobs: dict[str, Job] = {}
+        self._undeleted: set[Path] = set()  # folders Windows would not let us delete yet (file in use)
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="job")
         self._stop = threading.Event()
         self._sweeper: threading.Thread | None = None
+        self.touch_alive()
 
     @property
     def base_dir(self) -> Path:
         return self._base
 
+    def _free_bytes(self) -> int:
+        return self._disk_usage(self._base).free
+
     def create(self, url: str, mode: str, height: str = "best", audio_format: str = "mp3") -> Job:
+        if self._min_free and self._free_bytes() < self._min_free:
+            raise DownloadFailure(ErrorCode.DISK_FULL)
         job_id = uuid.uuid4().hex
         job = Job(
             id=job_id,
@@ -89,10 +113,31 @@ class JobManager:
             dir=self._base / job_id,
             created_at=self._clock(),
         )
-        job.dir.mkdir(parents=True)
         with self._lock:
+            # Checked and inserted under one lock, so concurrent requests cannot overshoot the cap.
+            if sum(1 for other in self._jobs.values() if other.active) >= self._max_queue:
+                raise DownloadFailure(ErrorCode.QUEUE_FULL)
+            job.dir.mkdir(parents=True)
             self._jobs[job_id] = job
-        self._pool.submit(self._run, job)
+        job.future = self._pool.submit(self._run, job)
+        return job
+
+    def cancel(self, job_id: str) -> Job | None:
+        """Stop an active job, or discard a finished one with its file. None if unknown."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            active = job.active
+            if not active:
+                del self._jobs[job_id]
+        if not active:
+            self._discard(job.dir)
+            return job
+        job.cancel_event.set()
+        # Still waiting in the pool: it never starts, so finish it here.
+        if job.future is not None and job.future.cancel():
+            self._finish(job, "cancelled", ErrorCode.CANCELLED, USER_MESSAGES[ErrorCode.CANCELLED])
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -109,19 +154,46 @@ class JobManager:
             ]
             expired = [self._jobs.pop(job_id) for job_id in expired_ids]
         for job in expired:
-            shutil.rmtree(job.dir, ignore_errors=True)
+            self._discard(job.dir)
+        self._retry_undeleted()
         return len(expired)
+
+    def _discard(self, path: Path) -> None:
+        """Delete a job folder. On Windows a file a client is still reading cannot be deleted:
+        remember the folder and try again on the next sweep instead of leaving it until exit."""
+        shutil.rmtree(path, ignore_errors=True)
+        if path.exists():
+            with self._lock:
+                self._undeleted.add(path)
+
+    def _retry_undeleted(self) -> None:
+        with self._lock:
+            pending = list(self._undeleted)
+        for path in pending:
+            shutil.rmtree(path, ignore_errors=True)
+            if not path.exists():
+                with self._lock:
+                    self._undeleted.discard(path)
 
     def start_sweeper(self, interval: float = 60.0) -> None:
         if self._sweeper is not None:
             return
 
         def loop():
+            self.touch_alive()
             while not self._stop.wait(interval):
+                self.touch_alive()
                 self.cleanup()
 
         self._sweeper = threading.Thread(target=loop, name="sweeper", daemon=True)
         self._sweeper.start()
+
+    def touch_alive(self) -> None:
+        """Heartbeat file: a later run deletes this directory only if the heartbeat went stale."""
+        try:
+            (self._base / ALIVE_FILE).touch()
+        except OSError:
+            log.exception("could not write heartbeat")
 
     def shutdown(self) -> None:
         self._stop.set()
@@ -129,22 +201,47 @@ class JobManager:
         shutil.rmtree(self._base, ignore_errors=True)
 
     def _run(self, job: Job) -> None:
+        if job.cancel_event.is_set():
+            self._finish(job, "cancelled", ErrorCode.CANCELLED, USER_MESSAGES[ErrorCode.CANCELLED])
+            return
         job.started_at = self._clock()
         job.status = "downloading"
         try:
             path = Path(self._runner(job, lambda d: self._on_progress(job, d)))
         except DownloadFailure as failure:
-            self._finish(job, "error", failure.code, failure.message)
+            if failure.code is ErrorCode.CANCELLED:
+                self._finish(job, "cancelled", failure.code, failure.message)
+            else:
+                self._finish(job, "error", failure.code, failure.message)
         except Exception as exc:
             # Type name only: the message and traceback of yt-dlp errors embed the full URL.
             log.error("job %s crashed (%s)", job.id, type(exc).__name__)
             self._finish(job, "error", ErrorCode.UNKNOWN, USER_MESSAGES[ErrorCode.UNKNOWN])
         else:
-            self._finish(job, "done", path=path)
+            if job.cancel_event.is_set():  # cancelled while ffmpeg was post-processing
+                self._finish(job, "cancelled", ErrorCode.CANCELLED, USER_MESSAGES[ErrorCode.CANCELLED])
+            else:
+                self._finish(job, "done", path=path)
+
+    def _check_limits(self, job: Job, data: dict) -> None:
+        """Raise from inside yt-dlp's progress hook to abort the download."""
+        if job.cancel_event.is_set():
+            raise DownloadFailure(ErrorCode.CANCELLED)
+        if self._max_filesize:
+            total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
+            if max(total, data.get("downloaded_bytes") or 0) > self._max_filesize:
+                raise DownloadFailure(ErrorCode.TOO_LARGE)
+        if self._min_free:
+            now = time.monotonic()
+            if now - self._last_disk_check >= 2.0:
+                self._last_disk_check = now
+                if self._free_bytes() < self._min_free:
+                    raise DownloadFailure(ErrorCode.DISK_FULL)
 
     def _on_progress(self, job: Job, data: dict) -> None:
         status = data.get("status")
         if status == "downloading":
+            self._check_limits(job, data)
             total = data.get("total_bytes") or data.get("total_bytes_estimate")
             if total:
                 percent = min(data.get("downloaded_bytes", 0) / total * 100.0, 99.9)
@@ -170,6 +267,9 @@ class JobManager:
         job.error_message = message
         job.speed = None
         job.eta = None
+        if status != "done":
+            # Nothing is left to download, so a failed or cancelled job frees its partial files now.
+            self._discard(job.dir)
         if path is not None:
             job.file_path = path
             job.filename = path.name

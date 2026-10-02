@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from app.egress_proxy import EgressProxy
 from app.extractor import fetch_info
 from app.jobs import Job
+from app.runtimes import js_runtimes_option
 from app.ytdlp_runner import run_download
 from evals.scoring import (
     DEAD_VIMEO_URL,
@@ -52,6 +54,9 @@ CASES = [
     ("dailymotion", DAILYMOTION, "audio", "mp3"),
 ]
 
+# Same path as the shipped app: every yt-dlp request goes through the egress proxy.
+PROXY = EgressProxy()
+
 AUDIO_CODEC = {"mp3": "mp3", "m4a": "aac", "opus": "opus"}
 
 
@@ -83,7 +88,7 @@ def verify(path: Path, mode: str, audio_format: str, expected_duration) -> str |
 def run_case(site, url, mode, audio_format) -> dict:
     started = time.time()
     try:
-        info = fetch_info(url)
+        info = fetch_info(url, proxy=PROXY.url, js_runtimes=js_runtimes_option())
         with tempfile.TemporaryDirectory(prefix="vd-eval-") as tmp:
             job = Job(
                 id="eval",
@@ -93,7 +98,7 @@ def run_case(site, url, mode, audio_format) -> dict:
                 audio_format=audio_format,
                 dir=Path(tmp),
             )
-            path = run_download(job, lambda data: None)
+            path = run_download(job, lambda data: None, proxy=PROXY.url)
             reason = verify(path, mode, audio_format, info.get("duration"))
         kind = PASS if reason is None else FAIL  # a bad file is a product failure
     except Exception as error:  # noqa: BLE001 - classified: network/timeout vs product failure
@@ -119,7 +124,11 @@ LABEL = {PASS: "PASS", FAIL: "FAIL", NETWORK: "NETWORK", KNOWN_DEAD: "KNOWN_DEAD
 
 
 def test_download_success_rate_meets_threshold():
-    results = [run_and_classify(*case) for case in CASES]
+    PROXY.start()
+    try:
+        results = [run_and_classify(*case) for case in CASES]
+    finally:
+        PROXY.stop()
     RESULTS_DIR.mkdir(exist_ok=True)
     (RESULTS_DIR / "last_run.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
 

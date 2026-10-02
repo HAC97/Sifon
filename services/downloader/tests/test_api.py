@@ -138,9 +138,44 @@ def test_cross_origin_job_creation_is_403_and_creates_nothing(make_client):
     assert res.status_code == 403
 
 
-@pytest.mark.parametrize("headers", [{"Origin": "http://127.0.0.1:8765"}, {"Origin": "http://localhost"}, {}])
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Origin": "http://127.0.0.1:8765", "Host": "127.0.0.1:8765"},
+        {"Origin": "http://localhost", "Host": "localhost"},
+        {"Origin": "http://LOCALHOST:9000", "Host": "localhost:9000"},
+        {"Origin": "http://[::1]:8000", "Host": "[::1]:8000"},
+        {},
+    ],
+)
 def test_same_origin_or_missing_origin_post_is_accepted(make_client, headers):
     assert make_client().post("/api/info", json=INFO_BODY, headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        # another web app on localhost, different port: local, but not the page that owns this API
+        {"Origin": "http://localhost:3000", "Host": "127.0.0.1:8765"},
+        {"Origin": "http://127.0.0.1:3000", "Host": "127.0.0.1:8765"},
+        # same port, different local name
+        {"Origin": "http://localhost:8765", "Host": "127.0.0.1:8765"},
+        # port omitted on one side only
+        {"Origin": "http://127.0.0.1", "Host": "127.0.0.1:8765"},
+        {"Origin": "http://127.0.0.1:8765", "Host": "127.0.0.1"},
+        # https origin against a plain-http server
+        {"Origin": "https://127.0.0.1", "Host": "127.0.0.1"},
+    ],
+)
+def test_post_from_another_local_origin_is_403(make_client, headers):
+    res = make_client().post("/api/info", json=INFO_BODY, headers=headers)
+    assert res.status_code == 403
+    assert res.json() == {"detail": "origin not allowed"}
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1:evil.com", "127.0.0.1:80@evil.com", "[::1]x"])
+def test_malformed_host_headers_are_403(make_client, host):
+    assert make_client().get("/api/health", headers={"Host": host}).status_code == 403
 
 
 def test_origin_is_not_checked_on_get(make_client):

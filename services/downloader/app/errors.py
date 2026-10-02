@@ -8,6 +8,12 @@ class ErrorCode(str, Enum):
     GEO_BLOCKED = "GEO_BLOCKED"
     FFMPEG_MISSING = "FFMPEG_MISSING"
     NETWORK = "NETWORK"
+    BLOCKED_ADDRESS = "BLOCKED_ADDRESS"
+    TOO_LARGE = "TOO_LARGE"
+    TOO_LONG = "TOO_LONG"
+    QUEUE_FULL = "QUEUE_FULL"
+    DISK_FULL = "DISK_FULL"
+    CANCELLED = "CANCELLED"
     UNKNOWN = "UNKNOWN"
 
 
@@ -18,6 +24,12 @@ USER_MESSAGES = {
     ErrorCode.GEO_BLOCKED: "El video no está disponible en tu país.",
     ErrorCode.FFMPEG_MISSING: "No se encontró ffmpeg. Instalalo y reiniciá la app.",
     ErrorCode.NETWORK: "Falló la conexión con el sitio. Revisá tu internet y probá de nuevo.",
+    ErrorCode.BLOCKED_ADDRESS: "El enlace, o una redirección, apunta a una red local o reservada y está bloqueado.",
+    ErrorCode.TOO_LARGE: "El archivo supera el tamaño máximo permitido (SIFON_MAX_FILESIZE_MB).",
+    ErrorCode.TOO_LONG: "El video supera la duración máxima permitida (SIFON_MAX_DURATION_MIN) o es una transmisión en vivo.",
+    ErrorCode.QUEUE_FULL: "Hay demasiadas descargas en curso o en cola. Esperá a que termine alguna.",
+    ErrorCode.DISK_FULL: "No hay espacio libre suficiente en el disco (SIFON_MIN_FREE_DISK_MB).",
+    ErrorCode.CANCELLED: "La descarga se canceló.",
     ErrorCode.UNKNOWN: "No se pudo descargar el video. Probá de nuevo o actualizá yt-dlp.",
 }
 
@@ -31,6 +43,8 @@ class DownloadFailure(Exception):
 
 # First match wins, so the specific causes come before the generic NETWORK words.
 _RULES = [
+    # Marker written by app.egress_proxy in the reason phrase of its refusals.
+    (ErrorCode.BLOCKED_ADDRESS, ("sifon-blocked-address",)),
     (
         ErrorCode.FFMPEG_MISSING,
         ("ffmpeg not found", "ffprobe not found", "ffprobe and ffmpeg not found", "ffmpeg is not installed"),
@@ -71,3 +85,10 @@ def map_error(message: str) -> ErrorCode:
         if any(needle in text for needle in needles):
             return code
     return ErrorCode.UNKNOWN
+
+
+# HTTP status of a DownloadFailure raised before a job exists. Everything else is a plain 400.
+HTTP_STATUS = {
+    ErrorCode.QUEUE_FULL: 429,
+    ErrorCode.DISK_FULL: 507,
+}

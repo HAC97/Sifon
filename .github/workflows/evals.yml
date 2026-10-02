@@ -1,0 +1,50 @@
+name: Evals (real sites)
+
+# Downloads real content from real services (YouTube, SoundCloud, Dailymotion, archive.org...).
+# The result depends on those services being reachable and unchanged, so this workflow is
+# manual or weekly and is NOT part of the merge gate. A NETWORK or INCONCLUSIVE verdict is
+# reported as such and is not a product failure; see services/downloader/README.md.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/downloader/requirements-dev.txt
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install ffmpeg (includes ffprobe)
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install dependencies and update yt-dlp
+        run: |
+          python -m pip install -r services/downloader/requirements-dev.txt
+          python -m pip install --upgrade --upgrade-strategy eager "yt-dlp[default,curl-cffi]"
+          python scripts/check_env.py --versions
+
+      - name: Run the real-site eval
+        run: python -m pytest services/downloader/evals -m eval -s -q
+
+      - name: Keep the per-case results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: services/downloader/evals/results/
+          if-no-files-found: warn
