@@ -1,0 +1,66 @@
+from enum import Enum
+
+
+class ErrorCode(str, Enum):
+    INVALID_URL = "INVALID_URL"
+    UNSUPPORTED_SITE = "UNSUPPORTED_SITE"
+    LOGIN_REQUIRED = "LOGIN_REQUIRED"
+    GEO_BLOCKED = "GEO_BLOCKED"
+    FFMPEG_MISSING = "FFMPEG_MISSING"
+    NETWORK = "NETWORK"
+    UNKNOWN = "UNKNOWN"
+
+
+USER_MESSAGES = {
+    ErrorCode.INVALID_URL: "La URL no es válida. Pegá un enlace completo que empiece con http:// o https://.",
+    ErrorCode.UNSUPPORTED_SITE: "Este sitio o enlace no está soportado.",
+    ErrorCode.LOGIN_REQUIRED: "El video es privado o requiere iniciar sesión, y esta app no soporta login.",
+    ErrorCode.GEO_BLOCKED: "El video no está disponible en tu país.",
+    ErrorCode.FFMPEG_MISSING: "No se encontró ffmpeg. Instalalo y reiniciá la app.",
+    ErrorCode.NETWORK: "Falló la conexión con el sitio. Revisá tu internet y probá de nuevo.",
+    ErrorCode.UNKNOWN: "No se pudo descargar el video. Probá de nuevo o actualizá yt-dlp.",
+}
+
+
+class DownloadFailure(Exception):
+    def __init__(self, code: ErrorCode, message: str | None = None):
+        self.code = code
+        self.message = message or USER_MESSAGES[code]
+        super().__init__(self.message)
+
+
+# First match wins, so the specific causes come before the generic NETWORK words.
+_RULES = [
+    (
+        ErrorCode.FFMPEG_MISSING,
+        ("ffmpeg not found", "ffprobe and ffmpeg not found", "ffmpeg is not installed"),
+    ),
+    (ErrorCode.UNSUPPORTED_SITE, ("unsupported url",)),
+    (
+        ErrorCode.LOGIN_REQUIRED,
+        ("sign in", "log in", "login", "private video", "members-only", "confirm your age", "age-restricted"),
+    ),
+    (
+        ErrorCode.GEO_BLOCKED,
+        ("not available in your country", "blocked it in your country", "geo restriction", "geo-restricted"),
+    ),
+    (
+        ErrorCode.NETWORK,
+        (
+            "timed out",
+            "connection",
+            "name or service not known",
+            "getaddrinfo",
+            "unable to download",
+            "temporary failure in name resolution",
+        ),
+    ),
+]
+
+
+def map_error(message: str) -> ErrorCode:
+    text = message.lower()
+    for code, needles in _RULES:
+        if any(needle in text for needle in needles):
+            return code
+    return ErrorCode.UNKNOWN
