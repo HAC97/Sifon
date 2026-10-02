@@ -13,6 +13,20 @@ from app.errors import USER_MESSAGES, DownloadFailure, ErrorCode, map_error
         ("ERROR: The uploader has blocked it in your country on copyright grounds", ErrorCode.GEO_BLOCKED),
         ("ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install", ErrorCode.FFMPEG_MISSING),
         ("ERROR: You have requested merging of multiple formats but ffmpeg is not installed", ErrorCode.FFMPEG_MISSING),
+        # The three texts yt-dlp raises in postprocessor/ffmpeg.py (lines 225, 234, 273).
+        (
+            "ERROR: Postprocessing: ffmpeg not found. Please install or provide the path using --ffmpeg-location",
+            ErrorCode.FFMPEG_MISSING,
+        ),
+        (
+            "ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location",
+            ErrorCode.FFMPEG_MISSING,
+        ),
+        # ffmpeg present but ffprobe missing: must not fall into the broad "not found" 404 rule.
+        (
+            "ERROR: Postprocessing: ffprobe not found. Please install or provide the path using --ffmpeg-location",
+            ErrorCode.FFMPEG_MISSING,
+        ),
         ("ERROR: Unable to download webpage: <urlopen error timed out>", ErrorCode.NETWORK),
         ("ERROR: [Errno 11001] getaddrinfo failed", ErrorCode.NETWORK),
         ("ERROR: [vimeo] 56015672: Unable to download webpage: HTTP Error 404: Not Found", ErrorCode.UNSUPPORTED_SITE),

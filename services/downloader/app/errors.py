@@ -33,7 +33,7 @@ class DownloadFailure(Exception):
 _RULES = [
     (
         ErrorCode.FFMPEG_MISSING,
-        ("ffmpeg not found", "ffprobe and ffmpeg not found", "ffmpeg is not installed"),
+        ("ffmpeg not found", "ffprobe not found", "ffprobe and ffmpeg not found", "ffmpeg is not installed"),
     ),
     (ErrorCode.UNSUPPORTED_SITE, ("unsupported url",)),
     (
