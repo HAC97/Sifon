@@ -25,7 +25,7 @@ function Fail($problem, $fix) {
 }
 
 if ($env:OS -ne 'Windows_NT') {
-    Fail 'sifón solo está probado en Windows.' 'Usá una computadora con Windows 10 u 11.'
+    Fail 'sifón solo está probado en Windows.' 'Usá una computadora con Windows (probado en Windows 11).'
 }
 
 # --- 1. Python ---------------------------------------------------------------------------------

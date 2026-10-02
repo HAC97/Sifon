@@ -13,16 +13,16 @@ Descargador local de video y audio para Windows. Pegás el enlace de un video, e
 
 | Qué | Versión | Obligatorio | Probado con |
 |---|---|---|---|
-| Windows 10 u 11, 64 bits | | sí | Windows 11 Home |
+| Windows 64 bits | 11 (10 no está probado) | sí | Windows 11 Home |
 | [Python](https://www.python.org/downloads/) | 3.10 o más nuevo | sí | 3.12.10 |
-| [FFmpeg](https://ffmpeg.org/download.html) | cualquiera reciente | sí | 8.1.1 (compilación `full` de gyan.dev) |
-| FFprobe | el que trae FFmpeg | no (ver abajo) | 8.1.1 |
-| [Deno](https://deno.com) | 2.x | recomendado, para YouTube | ver [Versiones probadas](#versiones-probadas-y-limitaciones) |
+| [FFmpeg](https://ffmpeg.org/download.html) | cualquiera reciente | sí | 8.1.1 y 9.0.2 (compilaciones `full` de gyan.dev) |
+| FFprobe | el que trae FFmpeg | no (ver abajo) | 8.1.1 y 9.0.2; también sin él |
+| [Deno](https://deno.com) | 2.x | recomendado, para YouTube | 2.9.7 |
 | Conexión a internet | | sí | |
 
 Linux y macOS **no están probados** y no se ofrecen como compatibles: los scripts son de Windows.
 
-**FFmpeg** convierte el audio y une el video con el audio. Sin él, nada se descarga. **FFprobe** viene en el mismo paquete; sin él la app funciona (audio, video y fusión probados sin `ffprobe`), pero algunos videos HLS pueden fallar con el error `FFMPEG_MISSING`. **Deno** es el motor de JavaScript que yt-dlp usa para YouTube: sin Deno (ni Node.js) YouTube puede fallar o ofrecer menos calidades; las demás páginas no lo necesitan. Si Deno no está pero sí Node.js, sifón usa Node.js (menos probado).
+**FFmpeg** convierte el audio y une el video con el audio. Sin él, nada se descarga (la app lo dice con el error `FFMPEG_MISSING`). **FFprobe** viene en el mismo paquete y es opcional: sin él se probaron video, MP3, M4A y Opus de un video de YouTube; algunos videos HLS pueden fallar con `FFMPEG_MISSING`. **Deno** es el motor de JavaScript con el que yt-dlp resuelve los desafíos de YouTube. Es una recomendación: en las pruebas un video de YouTube se descargó con Deno, con Node.js y también sin ninguno de los dos, pero yt-dlp lo exige para otros videos y puede fallar sin él. Las demás páginas no lo necesitan. Si Deno no está pero sí Node.js, sifón usa Node.js (menos probado que Deno).
 
 Una forma de instalar los tres con `winget` (el instalador de paquetes de Windows):
 
@@ -159,7 +159,7 @@ Detalles técnicos y cómo reportar una vulnerabilidad: [`services/downloader/RE
 
 ## Versiones probadas y limitaciones
 
-Probado el 2026-10-02 en Windows 11 Home (compilación 10.0.26300), con Python 3.12.10, FFmpeg/FFprobe 8.1.1, yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0, curl-cffi 0.16.3 y FastAPI 0.142.2. Los resultados de las pruebas y las limitaciones están en [`CHANGELOG.md`](CHANGELOG.md) y en [`docs/release-notes-v0.1.0.md`](docs/release-notes-v0.1.0.md).
+Probado el 2026-10-02 en Windows 11 Home (compilación 10.0.26300), con Python 3.12.10, FFmpeg/FFprobe 8.1.1 y 9.0.2, Deno 2.9.7, Node.js 24.13.1, yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0, curl-cffi 0.16.3 y FastAPI 0.142.2. Otras versiones de Python (3.10, 3.11, 3.13) y de Windows no se probaron. Los resultados de las pruebas y las limitaciones están en [`CHANGELOG.md`](CHANGELOG.md) y en [`docs/release-notes-v0.1.0.md`](docs/release-notes-v0.1.0.md).
 
 ## Estructura
 
