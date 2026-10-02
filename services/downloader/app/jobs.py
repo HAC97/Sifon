@@ -135,8 +135,9 @@ class JobManager:
             path = Path(self._runner(job, lambda d: self._on_progress(job, d)))
         except DownloadFailure as failure:
             self._finish(job, "error", failure.code, failure.message)
-        except Exception:
-            log.exception("job %s crashed", job.id)
+        except Exception as exc:
+            # Type name only: the message and traceback of yt-dlp errors embed the full URL.
+            log.error("job %s crashed (%s)", job.id, type(exc).__name__)
             self._finish(job, "error", ErrorCode.UNKNOWN, USER_MESSAGES[ErrorCode.UNKNOWN])
         else:
             self._finish(job, "done", path=path)

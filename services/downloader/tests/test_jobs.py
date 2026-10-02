@@ -193,3 +193,16 @@ def test_failed_job_log_has_error_code(make_manager, tmp_path):
     entry = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
     assert entry["status"] == "error"
     assert entry["error_code"] == "NETWORK"
+
+
+def test_crash_log_never_contains_the_url(make_manager, caplog):
+    def leaking(job, on_progress):
+        raise RuntimeError("https://secret.example/x?token=abc")
+
+    manager = make_manager(leaking)
+    with caplog.at_level("DEBUG"):
+        job = manager.create("https://secret.example/x?token=abc", "video")
+        wait_for(lambda: job.status == "error")
+    assert "secret.example" not in caplog.text
+    assert "token=abc" not in caplog.text
+    assert "RuntimeError" in caplog.text

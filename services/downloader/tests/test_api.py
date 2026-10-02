@@ -85,6 +85,19 @@ def test_info_unexpected_exception_maps_to_400_unknown(make_client):
     assert res.json()["error_code"] == "UNKNOWN"
 
 
+def test_info_unexpected_exception_never_leaks_url_to_log_or_body(make_client, caplog):
+    def leaking(url):
+        raise RuntimeError("https://secret.example/x?token=abc")
+
+    with caplog.at_level("DEBUG"):
+        res = make_client(info_fetcher=leaking).post("/api/info", json={"url": "https://example.com/v"})
+    assert res.status_code == 400
+    for leaked in ("secret.example", "token=abc"):
+        assert leaked not in caplog.text
+        assert leaked not in res.text
+    assert "RuntimeError" in caplog.text
+
+
 @pytest.mark.parametrize("bad", ["youtube.com/watch?v=1", "", "ftp://x.com/a", "https://exa mple.com/"])
 def test_malformed_urls_are_400_invalid_url_not_500(make_client, bad):
     client = make_client(url_validator=validate_url)

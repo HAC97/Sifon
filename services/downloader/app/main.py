@@ -113,8 +113,8 @@ def create_app(
         except DownloadFailure:
             raise
         except Exception as exc:
-            # Never log the URL, only the exception type.
-            log.exception("unexpected error fetching info (%s)", type(exc).__name__)
+            # Never log the URL: only the exception type, no message, no traceback.
+            log.error("unexpected error fetching info (%s)", type(exc).__name__)
             raise DownloadFailure(ErrorCode.UNKNOWN) from exc
 
     @app.post(
