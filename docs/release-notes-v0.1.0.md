@@ -33,7 +33,7 @@ Todo en una sola máquina: Windows 11 Home 10.0.26300, Python 3.12.10, yt-dlp 20
 |---|---|
 | Tests locales (gate, sin red) | 332 pasaron |
 | Tests de navegador (Playwright + Chromium) | 17 pasaron |
-| Eval con sitios reales, pasando por el proxy de salida, 3 corridas | 9 de 9 casos activos `PASS` las 3 veces (YouTube video y audio MP3, M4A y Opus; SoundCloud; archive.org; Dailymotion), 0 `FAIL`, 0 `NETWORK`; los 2 casos de Vimeo `KNOWN_DEAD` (el video ya no existe o pide login). Cada corrida tardó entre 80 y 97 s |
+| Eval con sitios reales, 3 corridas (la primera llamaba a yt-dlp sin el proxy de salida; las otras dos, ya con el eval corregido, pasan por el proxy como la aplicación; la última con el código final) | 9 de 9 casos activos `PASS` las 3 veces (YouTube video y audio MP3, M4A y Opus; SoundCloud; archive.org; Dailymotion), 0 `FAIL`, 0 `NETWORK`; los 2 casos de Vimeo `KNOWN_DEAD` (el video ya no existe o pide login). Cada corrida tardó entre 80 y 97 s |
 | Desde un ZIP nuevo, siguiendo el README: `install.cmd` (23 s), `run.cmd`, con el navegador real: video 360p de YouTube (AV1 + AAC, 634,6 s, verificado con ffprobe), MP3 de YouTube y Opus de SoundCloud, y `update.cmd` | todo bien |
 | Puerto 8000 ocupado: `run.cmd` pasa al 8001; `-Port` ocupado: se detiene con un mensaje | bien |
 | Sin FFmpeg: `install.cmd` se detiene; con el servidor andando la descarga da `FFMPEG_MISSING` | bien |
