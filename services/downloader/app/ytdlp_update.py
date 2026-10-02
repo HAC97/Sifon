@@ -26,7 +26,9 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -45,6 +47,10 @@ MAX_WHEEL_BYTES = 40 * 1024 * 1024
 MAX_UNPACKED_BYTES = 120 * 1024 * 1024
 MAX_FILES = 6000
 HTTP_TIMEOUT = 20
+DOWNLOAD_DEADLINE = 120  # seconds for one whole download, however slowly the server trickles
+VERSION_RE = re.compile(r"\d{1,9}(\.\d{1,9}){1,5}")
+PYPI_HOSTS = {"pypi.org", "files.pythonhosted.org"}
+WHEEL_HOST = "files.pythonhosted.org"
 
 Fetch = Callable[[str], bytes]
 
@@ -62,16 +68,42 @@ def version_key(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in parts)
 
 
+def same_version(a: str, b: str) -> bool:
+    """'2026.08.19' (yt-dlp's own string) and '2026.8.19' (PyPI's normalised one) are one release."""
+    return bool(version_key(a)) and version_key(a) == version_key(b)
+
+
+def check_url(url: str, hosts: set[str] = PYPI_HOSTS) -> str:
+    """Only https, only PyPI's own hosts: a hostile JSON cannot point the updater elsewhere."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or (parts.hostname or "").lower() not in hosts or parts.username or parts.password:
+        raise ValueError(f"refusing to download from {parts.scheme}://{parts.hostname}")
+    return url
+
+
+class _SameHostsRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect may not leave https or PyPI's hosts (urllib would happily follow https -> http)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_SameHostsRedirects)
+
+
 def default_fetch(url: str) -> bytes:
-    if not url.startswith("https://"):
-        raise ValueError("only https downloads are allowed")
+    check_url(url)
     request = urllib.request.Request(url, headers={"User-Agent": "sifon-updater"})
-    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:  # noqa: S310 (https only, checked above)
+    deadline = time.monotonic() + DOWNLOAD_DEADLINE
+    with _OPENER.open(request, timeout=HTTP_TIMEOUT) as response:
         chunks, total = [], 0
         while chunk := response.read(1 << 16):
             total += len(chunk)
             if total > MAX_WHEEL_BYTES:
                 raise ValueError("download is larger than the allowed size")
+            if time.monotonic() > deadline:
+                raise TimeoutError("the download is taking too long")
             chunks.append(chunk)
     return b"".join(chunks)
 
@@ -119,7 +151,10 @@ def apply_overlay(data_dir: Path, bundled_version: str | None = None) -> str | N
             for name in [m for m in sys.modules if m.split(".")[0] in PACKAGES]:
                 del sys.modules[name]
             try:
-                folder.rename(folder.with_name(folder.name + ".bad"))
+                (folder / OK_MARKER).unlink(missing_ok=True)  # first: it must stop being "usable" whatever happens next
+                target = folder.with_name(folder.name + ".bad")
+                shutil.rmtree(target, ignore_errors=True)
+                folder.rename(target)
             except OSError:
                 pass
     return None
@@ -133,7 +168,9 @@ def _wheel(info: dict, version: str) -> dict:
     for entry in info.get("releases", {}).get(version, []) or info.get("urls", []):
         name = entry.get("filename", "")
         if entry.get("packagetype") == "bdist_wheel" and name.endswith("-py3-none-any.whl") and not entry.get("yanked"):
-            return {"url": entry["url"], "sha256": entry["digests"]["sha256"], "filename": name}
+            if "/" in name or "\\" in name or ".." in name:
+                raise ValueError(f"suspicious wheel file name: {name!r}")
+            return {"url": check_url(entry["url"], {WHEEL_HOST}), "sha256": entry["digests"]["sha256"], "filename": name}
     raise ValueError(f"no universal wheel published for {version}")
 
 
@@ -149,11 +186,15 @@ def plan_update(fetch: Fetch, installed: str) -> tuple[str, list[dict]] | None:
     """(new version, wheels to install) or None if `installed` is already the latest."""
     meta = json.loads(fetch(PYPI_JSON.format(name="yt-dlp")))
     latest = meta["info"]["version"]
+    if not isinstance(latest, str) or not VERSION_RE.fullmatch(latest):
+        raise ValueError(f"unexpected version string from the index: {latest!r}")
     if version_key(latest) <= version_key(installed):
         return None
     wheels = [_wheel(meta, latest)]
     pin = _ejs_pin(meta["info"].get("requires_dist"))
     if pin:
+        if not VERSION_RE.fullmatch(pin):
+            raise ValueError(f"unexpected yt-dlp-ejs version: {pin!r}")
         ejs_meta = json.loads(fetch(PYPI_JSON.format(name=f"yt-dlp-ejs/{pin}")))
         wheels.append(_wheel({"urls": ejs_meta["urls"]}, pin))
     return latest, wheels
@@ -192,8 +233,9 @@ def selftest_command(folder: Path, expected: str) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, "--selftest-ytdlp", str(folder), expected]
     code = (
-        "import sys; sys.path.insert(0, sys.argv[1]); import yt_dlp.version as v, yt_dlp_ejs;"
-        "assert v.__version__ == sys.argv[2], v.__version__; print(v.__version__)"
+        "import re, sys; sys.path.insert(0, sys.argv[1]); import yt_dlp.version as v, yt_dlp_ejs;"
+        "k = lambda t: [int(x) for x in re.findall(r'\\d+', t)];"
+        "assert k(v.__version__) == k(sys.argv[2]), v.__version__; print(v.__version__)"
     )
     return [sys.executable, "-c", code, str(folder), expected]
 
@@ -203,7 +245,8 @@ def run_selftest(folder: Path, expected: str) -> bool:
         done = subprocess.run(selftest_command(folder, expected), capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return False
-    return done.returncode == 0 and done.stdout.strip().endswith(expected)
+    lines = done.stdout.strip().splitlines()
+    return done.returncode == 0 and bool(lines) and same_version(lines[-1], expected)
 
 
 # --- the update itself -------------------------------------------------------------------------
@@ -220,10 +263,13 @@ def install_update(
         if plan is None:
             return UpdateResult("current", f"yt-dlp {installed} es la última versión publicada", installed)
         version, wheels = plan
-        final = overlay_root(data_dir) / version
+        root = overlay_root(data_dir)
+        final = root / version
+        if final.resolve().parent != root.resolve():  # belt and braces on top of VERSION_RE
+            raise ValueError("the version does not name a folder inside the updates folder")
         if (final / OK_MARKER).is_file():
             return UpdateResult("updated", f"yt-dlp {version} ya estaba descargado; se aplica al reiniciar", version)
-        staging = overlay_root(data_dir) / f"{version}.tmp"
+        staging = root / f"{version}.tmp"
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True)
         try:
@@ -240,19 +286,30 @@ def install_update(
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
-        prune(data_dir)
+        prune(data_dir, keep=active_overlay())
         return UpdateResult("updated", f"yt-dlp {version} descargado y verificado; se aplica al reiniciar", version)
     except Exception as exc:  # noqa: BLE001 - the contract is "never raise"
         log.warning("yt-dlp update failed (%s)", type(exc).__name__)
         return UpdateResult("failed", f"No se pudo actualizar yt-dlp ({type(exc).__name__}: {exc})")
 
 
-def prune(data_dir: Path) -> None:
+def active_overlay() -> Path | None:
+    """The overlay folder this process imported yt-dlp from (it must never be pruned), if any."""
+    location = getattr(sys.modules.get("yt_dlp"), "__file__", None)
+    if not location:
+        return None
+    folder = Path(location).resolve().parent.parent
+    return folder if folder.parent.name == OVERLAY_DIR else None
+
+
+def prune(data_dir: Path, keep: Path | None = None) -> None:
     for _, folder in usable_overlays(data_dir)[KEEP_VERSIONS:]:
+        if keep is not None and folder.resolve() == keep:
+            continue
         shutil.rmtree(folder, ignore_errors=True)
     root = overlay_root(data_dir)
     if root.is_dir():
-        for stale in root.glob("*.tmp"):
+        for stale in (*root.glob("*.tmp"), *root.glob("*.bad")):
             shutil.rmtree(stale, ignore_errors=True)
 
 
@@ -263,31 +320,47 @@ def _state_file(data_dir: Path) -> Path:
     return data_dir / "update_state.json"
 
 
+_PREFS_LOCK = threading.Lock()
+
+
 def read_prefs(data_dir: Path) -> dict:
     try:
-        return json.loads(_state_file(data_dir).read_text(encoding="utf-8"))
+        state = json.loads(_state_file(data_dir).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    return state if isinstance(state, dict) else {}
 
 
 def write_prefs(data_dir: Path, **changes) -> None:
-    state = {**read_prefs(data_dir), **changes}
-    try:
-        _state_file(data_dir).write_text(json.dumps(state), encoding="utf-8")
-    except OSError:
-        log.warning("could not save update preferences")
+    """Read-modify-write under a lock, replacing the file atomically (the window's checkbox and
+    the background check can both write at the same time)."""
+    with _PREFS_LOCK:
+        state = {**read_prefs(data_dir), **changes}
+        target = _state_file(data_dir)
+        temp = target.with_suffix(".tmp")
+        try:
+            temp.write_text(json.dumps(state), encoding="utf-8")
+            os.replace(temp, target)
+        except OSError:
+            log.warning("could not save update preferences")
 
 
 def auto_update_enabled(data_dir: Path, env: dict | None = None) -> bool:
     env = os.environ if env is None else env
     if env.get("SIFON_NO_AUTO_UPDATE", "").strip() not in ("", "0"):
         return False
-    return bool(read_prefs(data_dir).get("auto", True))
+    return read_prefs(data_dir).get("auto", True) is not False
 
 
 def check_due(data_dir: Path, now: float | None = None) -> bool:
-    last = read_prefs(data_dir).get("last_check", 0)
-    return (time.time() if now is None else now) - float(last or 0) >= CHECK_EVERY_SECONDS
+    now = time.time() if now is None else now
+    try:
+        last = float(read_prefs(data_dir).get("last_check", 0) or 0)
+    except (TypeError, ValueError):
+        last = 0.0
+    if last > now:  # recorded in the "future" (the clock moved back): untrustworthy, so check now
+        last = 0.0
+    return now - last >= CHECK_EVERY_SECONDS
 
 
 def update_if_due(data_dir: Path, installed: str, fetch: Fetch = default_fetch, **kwargs) -> UpdateResult:

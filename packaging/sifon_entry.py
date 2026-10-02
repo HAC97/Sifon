@@ -21,7 +21,12 @@ def selftest_ytdlp(folder: str, expected: str) -> int:
         import yt_dlp.version
         import yt_dlp_ejs  # noqa: F401
 
-        if yt_dlp.version.__version__ != expected:
+        import re
+
+        def key(text):
+            return [int(x) for x in re.findall(r"\d+", text)]
+
+        if key(yt_dlp.version.__version__) != key(expected):
             print(f"wrong version {yt_dlp.version.__version__}", file=sys.stderr)
             return 1
         print(yt_dlp.version.__version__)

@@ -172,6 +172,13 @@ def run_overlay_checks(package: Path, exe: Path, work: Path, src: Path) -> None:
     make_overlay(src, overlay, "2099.1.1")
     done = subprocess.run([str(exe), "--selftest-ytdlp", str(overlay), "2099.1.1"], capture_output=True, text=True, env=clean_env(data), timeout=90)
     check("the packaged program can self-test an unpacked yt-dlp", done.returncode == 0 and "2099.1.1" in done.stdout, (done.stdout + done.stderr).strip()[:120])
+    # yt-dlp writes '2099.01.01' while PyPI reports '2099.1.1': the real updater must treat them as one.
+    padded = work / "padded" / "2099.01.01"
+    make_overlay(src, padded, "2099.01.01")
+    done = subprocess.run([str(exe), "--selftest-ytdlp", str(padded), "2099.1.1"], capture_output=True, text=True, env=clean_env(data), timeout=90)
+    check("the packaged self-test accepts a zero-padded version for PyPI's normalised one", done.returncode == 0, (done.stdout + done.stderr).strip()[:100])
+    shutil.rmtree(work / "padded", ignore_errors=True)
+
     app = Running(exe, data, {"SIFON_NO_AUTO_UPDATE": "1"})
     try:
         check("a downloaded yt-dlp is loaded in front of the bundled one", bool(app.health) and app.health["ytdlp_version"] == "2099.1.1", str(app.health and app.health["ytdlp_version"]))

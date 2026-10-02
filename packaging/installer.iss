@@ -1,4 +1,4 @@
-; Inno Setup script for sifón. Built by packaging/build.py --installer, which passes:
+﻿; Inno Setup script for sifón. Built by packaging/build.py --installer, which passes:
 ;   /DAppVersion=0.2.0 /DSourceDir=<dist\sifon> /DOutputDir=<dist> /DIconFile=<build\sifon.ico>
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -47,6 +47,11 @@ Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; Fl
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[InstallDelete]
+; An upgrade replaces the bundled libraries wholesale: files of an older layout must not linger.
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\bin"
 
 [Icons]
 Name: "{autoprograms}\sifón"; Filename: "{app}\sifon.exe"

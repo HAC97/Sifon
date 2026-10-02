@@ -37,12 +37,12 @@ class FakePyPI:
         self.requested = []
         ytdlp_wheel = make_wheel(version)
         ejs_wheel = make_wheel(ejs, "yt_dlp_ejs")
-        self.files["https://files/yt_dlp.whl"] = ytdlp_wheel
-        self.files["https://files/ejs.whl"] = ejs_wheel
+        self.files["https://files.pythonhosted.org/packages/yt_dlp.whl"] = ytdlp_wheel
+        self.files["https://files.pythonhosted.org/packages/ejs.whl"] = ejs_wheel
         digest = hashlib.sha256(ytdlp_wheel).hexdigest() if not tamper else "0" * 64
         entry = {
             "packagetype": "bdist_wheel", "filename": f"yt_dlp-{version}-py3-none-any.whl",
-            "url": "https://files/yt_dlp.whl", "digests": {"sha256": digest}, "yanked": yanked,
+            "url": "https://files.pythonhosted.org/packages/yt_dlp.whl", "digests": {"sha256": digest}, "yanked": yanked,
         }
         self.files["https://pypi.org/pypi/yt-dlp/json"] = json.dumps(
             {"info": {"version": version, "requires_dist": [f'yt-dlp-ejs=={ejs}; extra == "default"', "requests"]},
@@ -50,7 +50,7 @@ class FakePyPI:
         ).encode()
         self.files[f"https://pypi.org/pypi/yt-dlp-ejs/{ejs}/json"] = json.dumps(
             {"urls": [{"packagetype": "bdist_wheel", "filename": f"yt_dlp_ejs-{ejs}-py3-none-any.whl",
-                       "url": "https://files/ejs.whl", "digests": {"sha256": hashlib.sha256(ejs_wheel).hexdigest()}}]}
+                       "url": "https://files.pythonhosted.org/packages/ejs.whl", "digests": {"sha256": hashlib.sha256(ejs_wheel).hexdigest()}}]}
         ).encode()
 
     def __call__(self, url):

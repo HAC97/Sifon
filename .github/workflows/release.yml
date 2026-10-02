@@ -1,23 +1,44 @@
 name: Release (Windows package)
 
-# Runs when a version tag is pushed (v0.2.0, ...). Builds the installer and the portable ZIP,
-# tests them, and attaches them to the GitHub release of that tag. If the release does not
-# exist yet, a DRAFT is created so a person reviews the notes before publishing.
+# Runs when a version tag is pushed (v0.2.0, ...). The build job has READ-ONLY permissions and
+# runs the tests; only the small publish job can write, and it only attaches the finished files
+# to a DRAFT release (creating the draft if needed). A person reviews the notes and publishes.
+# It never replaces the files of a release that is already published.
+#
+# To release: merge to main, bump app/__init__.py, push the tag vX.Y.Z on the merged commit,
+# wait for this workflow, review the draft on GitHub, publish.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      # The tag name is attacker-influenced text: it only ever reaches scripts through an
+      # environment variable, never by ${{ }} interpolation into the script body.
+      REF: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - name: The tag must be vX.Y.Z, match the app version and be on main
+        shell: powershell
+        run: |
+          if (-not ($env:REF -cmatch '^v\d+\.\d+\.\d+$')) { throw 'the tag name must look like v1.2.3' }
+          git fetch --quiet origin main
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'the tagged commit is not on main' }
+          $version = python -c "import sys; sys.path.insert(0, 'services/downloader'); from app import __version__; print(__version__)"
+          if ("v$version" -ne $env:REF) { throw "tag $($env:REF) does not match app version $version" }
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
           cache: pip
@@ -26,16 +47,10 @@ jobs:
       - name: Install build dependencies and Inno Setup
         run: |
           python -m pip install -r packaging/requirements-build.txt
-          choco install innosetup -y --no-progress
-
-      - name: The tag must match the app version
-        shell: powershell
-        run: |
-          $version = python -c "import sys; sys.path.insert(0, 'services/downloader'); from app import __version__; print(__version__)"
-          if ("v$version" -ne "${{ github.ref_name }}") { throw "tag ${{ github.ref_name }} does not match app version $version" }
+          .\packaging\install_innosetup.ps1
 
       - name: Build
-        run: python packaging/build.py --installer
+        run: python packaging/build.py --installer --iscc $env:ISCC
 
       - name: Smoke test, offline and with a real download
         shell: powershell
@@ -52,14 +67,44 @@ jobs:
           .\packaging\test_installer.ps1 -Setup $setup -Python python -YtdlpSrc $src
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Attach to the release
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-package
+          path: |
+            dist/sifon-*-setup.exe
+            dist/sifon-*-windows-portable.zip
+            dist/SHA256SUMS.txt
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      REF: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-package
+          path: dist
+
+      - name: Attach the files to a draft release
+        shell: bash
         run: |
-          $tag = "${{ github.ref_name }}"
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --verify-tag --draft --title "sifón $tag" --notes "Borrador creado por el flujo de publicación: revisar las notas antes de publicar. Ver CHANGELOG.md."
-          }
-          gh release upload $tag (Get-ChildItem dist/sifon-*-setup.exe).FullName (Get-ChildItem dist/sifon-*-windows-portable.zip).FullName dist/SHA256SUMS.txt --clobber
+          [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unexpected tag name"; exit 1; }
+          if state=$(gh release view "$REF" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$state" != "true" ]; then
+              echo "The release $REF is already published: refusing to replace its files."
+              echo "Delete or un-publish it (back to draft) first if you really mean to."
+              exit 1
+            fi
+          else
+            gh release create "$REF" --repo "$REPO" --verify-tag --draft --title "sifón $REF" \
+              --notes "Borrador creado por el flujo de publicación: revisar las notas antes de publicar. Ver CHANGELOG.md."
+          fi
+          gh release upload "$REF" --repo "$REPO" --clobber dist/sifon-*-setup.exe dist/sifon-*-windows-portable.zip dist/SHA256SUMS.txt

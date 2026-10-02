@@ -9,6 +9,7 @@ thin tkinter shell on top.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import logging.handlers
@@ -42,7 +43,7 @@ def port_is_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         try:
             probe.bind(("127.0.0.1", port))
-        except OSError:
+        except (OSError, OverflowError):
             return False
     return True
 
@@ -59,7 +60,12 @@ def choose_port(preferred: int = DEFAULT_PORT, span: int = PORT_SPAN, is_free: C
 
 # The server routes this whole process's proxy variables through its egress proxy (which refuses
 # 127.0.0.1 on purpose), so talking to ourselves must never use any proxy.
-_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # a 3xx is "not sifon": never follow it to some other local service
+
+
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
 def fetch_health(port: int, timeout: float = 2.0) -> dict | None:
@@ -68,7 +74,8 @@ def fetch_health(port: int, timeout: float = 2.0) -> dict | None:
             body = json.loads(response.read())
     except (OSError, ValueError):
         return None
-    return body if isinstance(body, dict) and body.get("ok") and "ytdlp_version" in body else None
+    looks_like_sifon = isinstance(body, dict) and body.get("ok") is True and "ytdlp_version" in body and "version" in body
+    return body if looks_like_sifon else None
 
 
 def instance_path(data_dir: Path) -> Path:
@@ -79,11 +86,53 @@ def write_instance(data_dir: Path, port: int) -> None:
     instance_path(data_dir).write_text(json.dumps({"pid": os.getpid(), "port": port}), encoding="utf-8")
 
 
-def clear_instance(data_dir: Path) -> None:
+def clear_instance(data_dir: Path, owner_pid: int | None = None) -> None:
+    """Remove instance.json. With `owner_pid`, only if it records that pid (never another run's file)."""
+    path = instance_path(data_dir)
     try:
-        instance_path(data_dir).unlink()
-    except OSError:
+        if owner_pid is not None and int(json.loads(path.read_text(encoding="utf-8")).get("pid", -1)) != owner_pid:
+            return
+        path.unlink()
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
+
+
+class SingleInstance:
+    """A named Windows mutex per data folder: the OS decides who is first, so two quick
+    double-clicks cannot both start a server (the instance file alone cannot guarantee that)."""
+
+    ERROR_ALREADY_EXISTS = 183
+
+    def __init__(self, data_dir: Path):
+        self.name = "Local\\sifon-" + hashlib.sha1(str(data_dir.resolve()).lower().encode("utf-8")).hexdigest()[:20]
+        self.acquired = True
+        self._handle = None
+        if sys.platform == "win32":
+            import ctypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CreateMutexW.restype = ctypes.c_void_p
+            kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+            self._handle = kernel32.CreateMutexW(None, 0, self.name)
+            self.acquired = bool(self._handle) and ctypes.get_last_error() != self.ERROR_ALREADY_EXISTS
+
+    def release(self) -> None:
+        if self._handle and sys.platform == "win32":
+            import ctypes
+
+            ctypes.WinDLL("kernel32").CloseHandle(ctypes.c_void_p(self._handle))
+            self._handle = None
+
+
+def wait_for_running(data_dir: Path, timeout: float = 20.0, health: Callable[[int], dict | None] = fetch_health) -> int | None:
+    """Port of the sifon that holds the mutex, waiting while it is still starting up."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        port = find_running(data_dir, health)
+        if port is not None:
+            return port
+        time.sleep(0.25)
+    return None
 
 
 def find_running(data_dir: Path, health: Callable[[int], dict | None] = fetch_health) -> int | None:
@@ -155,7 +204,8 @@ class ServerThread:
 
 
 class Desktop:
-    def __init__(self, data_dir: Path, port: int, server: ServerThread, installed_ytdlp: str):
+    def __init__(self, data_dir: Path, port: int, server: ServerThread, installed_ytdlp: str, argv: list[str] | None = None):
+        self.argv = list(argv or [])
         self.data_dir = data_dir
         self.port = port
         self.server = server
@@ -205,13 +255,16 @@ class Desktop:
 
     def shutdown(self) -> None:
         self.server.stop()
-        clear_instance(self.data_dir)
+        clear_instance(self.data_dir, owner_pid=os.getpid())
 
     def restart(self, argv: list[str] | None = None) -> None:
         """Stop the server, then start a fresh copy of this program (used to apply an update)."""
         self.shutdown()
         command = [sys.executable] if paths.is_frozen() else [sys.executable, "-m", "app.desktop"]
-        subprocess.Popen(command + (argv or ["--no-browser"]), close_fds=True)  # noqa: S603
+        args = list(argv) if argv is not None else list(self.argv)
+        if "--no-browser" not in args:
+            args.append("--no-browser")  # the page is already open in the browser
+        subprocess.Popen(command + args, close_fds=True)  # noqa: S603
 
 
 # --- logging ------------------------------------------------------------------------------------
@@ -232,11 +285,18 @@ def setup_logging(data_dir: Path) -> Path:
 # --- main ---------------------------------------------------------------------------------------
 
 
+def port_number(text: str) -> int:
+    value = int(text)
+    if not 1024 <= value <= 65535:
+        raise argparse.ArgumentTypeError("el puerto tiene que estar entre 1024 y 65535")
+    return value
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="sifon", description="sifón: descargador local de video y audio")
     parser.add_argument("--no-window", action="store_true", help="sin ventana de control (se cierra con Ctrl+C)")
     parser.add_argument("--no-browser", action="store_true", help="no abrir el navegador")
-    parser.add_argument("--port", type=int, default=0, help="puerto fijo (por defecto el primero libre desde 8000)")
+    parser.add_argument("--port", type=port_number, default=0, help="puerto fijo (por defecto el primero libre desde 8000)")
     return parser.parse_args(argv)
 
 
@@ -261,12 +321,13 @@ def main(argv: list[str] | None = None, app_factory: Callable | None = None) -> 
     paths.prepend_bin_to_path()
     setup_logging(data_dir)
 
-    running = find_running(data_dir)
-    if running is not None:
+    instance = SingleInstance(data_dir)
+    if not instance.acquired:
+        running = wait_for_running(data_dir)
         log.info("sifon is already running on port %s", running)
-        if not args.no_browser:
+        if running is not None and not args.no_browser:
             webbrowser.open(f"http://127.0.0.1:{running}")
-        return 0
+        return 0 if running is not None else 1
 
     if app_factory is None:
         from app.main import server_app as app_factory  # imported late: yt-dlp overlay must come first
@@ -289,7 +350,7 @@ def main(argv: list[str] | None = None, app_factory: Callable | None = None) -> 
 
     import yt_dlp.version
 
-    desktop = Desktop(data_dir, port, server, yt_dlp.version.__version__)
+    desktop = Desktop(data_dir, port, server, yt_dlp.version.__version__, argv=sys.argv[1:] if argv is None else argv)
     log.info("sifon %s ready on %s (yt-dlp %s)", __version__, desktop.url, desktop.installed_ytdlp)
     if sys.stdout is not None:
         print(f"sifón {__version__} escucha en {desktop.url}", flush=True)
@@ -314,6 +375,7 @@ def main(argv: list[str] | None = None, app_factory: Callable | None = None) -> 
         pass
     finally:
         desktop.shutdown()
+        instance.release()
     return 0
 
 

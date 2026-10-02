@@ -10,6 +10,7 @@ Nothing is trusted without a hash, and the hash is recorded in the package's BUN
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 import urllib.request
@@ -21,6 +22,8 @@ FFMPEG_ZIP = "ffmpeg-n9.0-latest-win64-lgpl-shared-9.0.zip"
 FFMPEG_BASE = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
 DENO_VERSION = "2.9.7"
 DENO_ZIP = "deno-x86_64-pc-windows-msvc.zip"
+# Pinned in the repository, so a replaced release cannot slip a different Deno past the build.
+DENO_SHA256 = "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238"
 DENO_BASE = f"https://github.com/denoland/deno/releases/download/v{DENO_VERSION}/"
 DENO_LICENSE = f"https://raw.githubusercontent.com/denoland/deno/v{DENO_VERSION}/LICENSE.md"
 
@@ -40,8 +43,13 @@ def download(url: str, target: Path, timeout: int = 300) -> Path:
     if target.is_file() and target.stat().st_size > 0 and not target.name.endswith((".sha", ".sha256")):
         return target  # cached; its hash is checked against the publisher's list right after
     request = urllib.request.Request(url, headers={"User-Agent": "sifon-build"})
-    with urllib.request.urlopen(request, timeout=timeout) as response, target.open("wb") as out:  # noqa: S310
-        shutil.copyfileobj(response, out)
+    partial = target.with_name(target.name + ".part")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response, partial.open("wb") as out:  # noqa: S310
+            shutil.copyfileobj(response, out)
+        os.replace(partial, target)  # a download that dies half way never leaves a truncated cache file
+    finally:
+        partial.unlink(missing_ok=True)
     return target
 
 
@@ -73,6 +81,7 @@ def expected_from_powershell_sum(text: str) -> str:
 def verify(path: Path, expected: str) -> str:
     actual = sha256_of(path)
     if actual != expected.lower():
+        path.unlink(missing_ok=True)  # never keep a file that failed: the next build downloads it again
         raise ValueError(f"SHA-256 mismatch for {path.name}: expected {expected}, got {actual}")
     return actual
 
@@ -114,7 +123,11 @@ def fetch_ffmpeg(cache: Path, bin_dir: Path, licenses_dir: Path) -> Tool:
 def fetch_deno(cache: Path, bin_dir: Path, licenses_dir: Path) -> Tool:
     archive_path = download(DENO_BASE + DENO_ZIP, cache / f"deno-{DENO_VERSION}.zip")
     sums = download(DENO_BASE + DENO_ZIP + ".sha256sum", cache / f"deno-{DENO_VERSION}.sha").read_text(encoding="utf-8")
-    actual = verify(archive_path, expected_from_powershell_sum(sums))
+    published = expected_from_powershell_sum(sums)
+    if published != DENO_SHA256:
+        archive_path.unlink(missing_ok=True)
+        raise ValueError(f"Deno's published hash {published} is not the one pinned in the repository")
+    actual = verify(archive_path, DENO_SHA256)
     bin_dir.mkdir(parents=True, exist_ok=True)
     licenses_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive_path) as z:
