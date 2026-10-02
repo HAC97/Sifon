@@ -21,7 +21,7 @@ from app.config import Settings, load_settings
 from app.egress_proxy import EgressProxy
 from app.errors import HTTP_STATUS, DownloadFailure, ErrorCode
 from app.extractor import fetch_info
-from app.jobs import JobManager
+from app.jobs import ALIVE_FILE, JobManager
 from app.runtimes import detect_js_runtime, js_runtimes_option
 from app.urlcheck import validate_url
 from app.ytdlp_runner import run_download
@@ -108,15 +108,19 @@ def _hostname_of_origin(origin: str) -> str:
 
 
 TEMP_PREFIX = "sifon-"
-STALE_AFTER_SECONDS = 24 * 3600
+STALE_AFTER_SECONDS = 10 * 60  # a running instance refreshes its heartbeat every minute
 
 
-def _sweep_stale_temp_dirs(root: Path, keep: Path) -> None:
-    """Remove temp dirs left by a crashed run (not ours, untouched for a day)."""
-    cutoff = time.time() - STALE_AFTER_SECONDS
+def _sweep_stale_temp_dirs(root: Path, keep: Path, now: float | None = None) -> None:
+    """Remove the temp dirs of runs that died without cleaning up (heartbeat stale)."""
+    cutoff = (time.time() if now is None else now) - STALE_AFTER_SECONDS
     for entry in root.glob(f"{TEMP_PREFIX}*"):
         try:
-            if entry != keep and entry.is_dir() and entry.stat().st_mtime < cutoff:
+            if entry == keep or not entry.is_dir():
+                continue
+            beat = entry / ALIVE_FILE
+            last_seen = beat.stat().st_mtime if beat.exists() else entry.stat().st_mtime
+            if last_seen < cutoff:
                 shutil.rmtree(entry, ignore_errors=True)
         except OSError:
             continue

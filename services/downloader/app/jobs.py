@@ -17,6 +17,8 @@ from app.errors import USER_MESSAGES, DownloadFailure, ErrorCode
 
 log = logging.getLogger("videodownloader")
 
+ALIVE_FILE = ".alive"
+
 Runner = Callable[["Job", Callable[[dict], None]], Path]
 
 
@@ -158,11 +160,20 @@ class JobManager:
             return
 
         def loop():
+            self.touch_alive()
             while not self._stop.wait(interval):
+                self.touch_alive()
                 self.cleanup()
 
         self._sweeper = threading.Thread(target=loop, name="sweeper", daemon=True)
         self._sweeper.start()
+
+    def touch_alive(self) -> None:
+        """Heartbeat file: a later run deletes this directory only if the heartbeat went stale."""
+        try:
+            (self._base / ALIVE_FILE).touch()
+        except OSError:
+            log.exception("could not write heartbeat")
 
     def shutdown(self) -> None:
         self._stop.set()

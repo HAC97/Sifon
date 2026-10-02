@@ -92,7 +92,7 @@ if (Test-Path $venvPython) {
 # --- 4. Dependencias ---------------------------------------------------------------------------
 Step 'Instalando dependencias (puede tardar unos minutos)'
 $requirements = if ($Dev) { 'requirements-dev.txt' } else { 'requirements.txt' }
-& $venvPython -m pip install --disable-pip-version-check -r (Join-Path $service $requirements)
+& $venvPython -m pip install --quiet --disable-pip-version-check -r(Join-Path $service $requirements)
 if ($LASTEXITCODE -ne 0) {
     Fail 'pip no pudo instalar las dependencias.' 'Revisá tu conexión a internet y repetí. Si el error nombra un paquete, copiá ese texto en un reporte de problema.'
 }
