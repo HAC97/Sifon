@@ -8,6 +8,7 @@ from yt_dlp.utils import DownloadError
 
 from app.errors import DownloadFailure, ErrorCode, map_error
 from app.formats import OUTTMPL, ytdlp_options
+from app.mp4_repair import repair_mp4
 from app.runtimes import js_runtimes_option
 
 _PARTIAL_SUFFIXES = (".part", ".ytdl", ".temp")
@@ -68,4 +69,7 @@ def run_download(
         raise DownloadFailure(map_error(str(error))) from error
     if rejected:
         raise DownloadFailure(ErrorCode.TOO_LONG)
-    return find_output(job.dir)
+    output = find_output(job.dir)
+    if job.mode == "video":
+        repair_mp4(output)
+    return output
