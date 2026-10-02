@@ -44,6 +44,12 @@ _RULES = [
         ErrorCode.GEO_BLOCKED,
         ("not available in your country", "blocked it in your country", "geo restriction", "geo-restricted"),
     ),
+    # After login and geo (their messages can also say "unavailable"), before NETWORK
+    # (yt-dlp words a 404 as "Unable to download webpage: HTTP Error 404").
+    (
+        ErrorCode.UNSUPPORTED_SITE,
+        ("http error 404", "http error 410", "video unavailable", "this video is unavailable", "not found"),
+    ),
     (
         ErrorCode.NETWORK,
         (
@@ -51,6 +57,7 @@ _RULES = [
             "connection",
             "name or service not known",
             "getaddrinfo",
+            "http error 5",
             "unable to download",
             "temporary failure in name resolution",
         ),
