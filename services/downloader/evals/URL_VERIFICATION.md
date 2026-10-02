@@ -28,4 +28,6 @@ Re-check after adding curl_cffi (2026-10-01, same `--simulate` command):
 
 Conclusion: 7 Vimeo URLs were tried (56015672, 22439234, 76979871, 1084537, 148751763, 90509568, 347119375), none was usable (404 or login-only), so the 2 Vimeo eval cases are kept and fail on purpose. The eval margin is thin: 9 of 11 = 82% against an 80% threshold. Three later runs the same day gave 73%, 64% and 64% (archive.org did not answer from this machine; one YouTube audio case failed once), so the threshold is not confirmed as stable and the eval must be re-run when the sites are reachable.
 
+Run with the new scoring (2026-10-01, one run, after the final fix wave): PASS=7, FAIL=0, NETWORK=2 (both archive.org cases, still unreachable from this machine after one retry each), KNOWN_DEAD=2 (the Vimeo cases, now reported as UNSUPPORTED_SITE). Rate 7/7 = 100% over the 7 cases that could be judged, network share 22% (limit 25%), verdict PASS. archive.org was not exercised, so the 80% threshold is only confirmed for 7 of 9 active cases.
+
 Earlier notes (before the install): Dailymotion failed with the missing impersonation target, Vimeo with the login error.
