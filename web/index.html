@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VideoDownloader</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>VideoDownloader</h1>
+    <p class="sub">Pegá un enlace y descargá el video o solo el audio.</p>
+
+    <form id="url-form" autocomplete="off">
+      <input id="url" type="url" placeholder="https://..." required aria-label="URL del video">
+      <button id="fetch" type="submit">Buscar</button>
+    </form>
+
+    <p id="error" role="alert" hidden></p>
+
+    <section id="card" hidden>
+      <img id="thumb" alt="" referrerpolicy="no-referrer" hidden>
+      <div class="meta">
+        <h2 id="title"></h2>
+        <p id="byline"></p>
+      </div>
+
+      <div class="modes" role="radiogroup" aria-label="Tipo de descarga">
+        <label><input type="radio" name="mode" value="video" checked> Video</label>
+        <label><input type="radio" name="mode" value="audio"> Solo audio</label>
+      </div>
+
+      <label id="video-opt">Calidad
+        <select id="height"></select>
+      </label>
+      <label id="audio-opt" hidden>Formato
+        <select id="audio-format">
+          <option value="mp3">MP3</option>
+          <option value="m4a">M4A</option>
+          <option value="opus">Opus</option>
+        </select>
+      </label>
+
+      <button id="download" type="button">Descargar</button>
+
+      <div id="progress" hidden>
+        <progress id="bar" max="100" value="0"></progress>
+        <span id="status"></span>
+      </div>
+    </section>
+  </main>
+  <noscript>Esta página necesita JavaScript.</noscript>
+  <script src="app.js"></script>
+</body>
+</html>
