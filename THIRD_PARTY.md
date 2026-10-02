@@ -31,7 +31,22 @@ Nada de terceros. Se revisó el árbol completo (`git ls-files`):
 
 Solo para desarrollo (`install.cmd -Dev`): pytest (MIT), httpx (BSD-3-Clause), jsonschema (MIT) y Playwright (Apache-2.0).
 
-## Programas externos que instala el usuario
+## Incluido en el paquete de Windows (instalador y ZIP portable)
+
+El paquete que se publica en Releases (`packaging/`) trae, además de las dependencias de arriba, estos componentes. Se verifican con SHA-256 al construirlo y quedan listados, con sus hashes, en `licenses\BUNDLED.txt` dentro del paquete.
+
+| Componente | Versión | Licencia | Notas |
+|---|---|---|---|
+| FFmpeg y FFprobe (compilación de BtbN) | n9.0.2 | LGPL v3 | Compilación **sin** `--enable-gpl`, como bibliotecas compartidas (DLL) que se pueden reemplazar. Incluye libmp3lame (LGPL), libopus y libvorbis, entre otras. Código fuente: https://ffmpeg.org/download.html (etiqueta n9.0.x). Scripts de compilación y lista de bibliotecas: https://github.com/BtbN/FFmpeg-Builds. El texto de la licencia va en `licenses\FFmpeg-LICENSE.txt` |
+| Deno | 2.9.7 | MIT | `licenses\Deno-LICENSE.md` |
+| Python (intérprete y biblioteca estándar, con Tcl/Tk) | 3.12.10 | PSF License; Tcl/Tk con licencia tipo BSD | |
+| PyInstaller (solo el cargador `sifon.exe`) | 6.22.3 | GPL-2.0-or-later con excepción del cargador | La excepción permite distribuir aplicaciones generadas con cualquier licencia |
+| Inno Setup (solo para construir el instalador) | 6.x | Licencia de Inno Setup (permisiva) | No se distribuye |
+| Pillow (solo para dibujar el ícono al construir) | 12.x | HPND | No se distribuye |
+
+El ícono de `sifon.exe` es el mismo logo del proyecto (MIT), dibujado en el momento de construir el paquete.
+
+## Programas externos que instala el usuario (solo en el modo código fuente)
 
 sifón no los incluye ni los redistribuye; los busca en el `PATH`.
 

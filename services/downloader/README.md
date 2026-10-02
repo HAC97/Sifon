@@ -2,6 +2,15 @@
 
 Backend FastAPI + yt-dlp. Sirve también la interfaz de `web/`. Escucha solo en `127.0.0.1`. Instalación y uso: README de la raíz.
 
+## Ejecutable de Windows
+
+`app/desktop.py` es lo que ejecuta `sifon.exe`: elige un puerto libre (desde 8000), levanta el servidor (`server_app`) en un hilo, escribe `instance.json` en la carpeta de datos (una segunda ejecución la lee, comprueba `/api/health` y solo abre el navegador), muestra la ventana de `app/desktop_ui.py` (tkinter) o corre sin ventana (`--no-window`), busca actualizaciones de yt-dlp en segundo plano y cierra en orden (señal de interrupción, `SIGBREAK`, cierre de la ventana o el archivo `stop.request`).
+
+- `app/paths.py`: rutas en desarrollo y empaquetado (la carpeta del programa es de solo lectura; todo lo que se escribe va a `%LOCALAPPDATA%\sifon`, o a `SIFON_DATA_DIR`). El paquete antepone su `bin/` (ffmpeg, ffprobe, deno) al `PATH`.
+- `app/ytdlp_update.py`: descarga de PyPI la versión nueva de yt-dlp y la de `yt-dlp-ejs` que fija, verifica el SHA-256, extrae con límites, prueba en un subproceso (`sifon.exe --selftest-ytdlp <carpeta> <versión>`) y la deja en `<datos>\ytdlp\<versión>`. `packaging/sifon_entry.py` la antepone a `sys.path` **antes** de importar yt-dlp (en el ejecutable congelado, una carpeta en `sys.path` tiene prioridad sobre la copia incluida; lo comprueba `packaging/smoke_test.py`). Una actualización que no se importa se renombra `.bad` y se usa la incluida; una más vieja que la incluida se ignora.
+- Construcción y pruebas: `python packaging/build.py [--installer]` (PyInstaller, ffmpeg LGPL y Deno con hash verificado, ZIP portable, Inno Setup), `python packaging/smoke_test.py dist/sifon --ytdlp-src <site-packages> [--online]` (arranca el programa con un `PATH` sin Python, ffmpeg ni deno) y `packaging/test_installer.ps1` (instala, prueba y desinstala).
+- Una excepción sin capturar en una app de ventana de PyInstaller abre un diálogo modal que bloquea al proceso: por eso `sifon_entry.py` captura todo, escribe `logs\crash.log` y solo muestra su propio aviso si hay ventana.
+
 ## Endpoints
 
 Contrato completo en `contracts/api.openapi.json` (generado; un test falla si se desactualiza). Resumen:

@@ -90,3 +90,49 @@ jobs:
           $health | ConvertTo-Json
           if (-not $health.ffmpeg) { throw 'health says ffmpeg is missing' }
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*uvicorn*8765*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+  package:
+    name: Windows package (exe, portable ZIP, installer)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packaging/requirements-build.txt
+
+      # Deliberately NO ffmpeg, deno or node install: the package must bring its own.
+      - name: Install build dependencies and Inno Setup
+        run: |
+          python -m pip install -r packaging/requirements-build.txt
+          choco install innosetup -y --no-progress
+
+      - name: Build exe, portable ZIP and installer
+        run: python packaging/build.py --installer
+
+      - name: Smoke test the unpacked package (clean PATH, offline)
+        shell: powershell
+        run: |
+          $src = python -c "import yt_dlp, pathlib; print(pathlib.Path(yt_dlp.__file__).resolve().parent.parent)"
+          python packaging/smoke_test.py dist/sifon --ytdlp-src $src
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Install, smoke test and uninstall the installer
+        shell: powershell
+        run: |
+          $src = python -c "import yt_dlp, pathlib; print(pathlib.Path(yt_dlp.__file__).resolve().parent.parent)"
+          $setup = (Get-ChildItem dist/sifon-*-setup.exe).FullName
+          .\packaging\test_installer.ps1 -Setup $setup -Python python -YtdlpSrc $src
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: |
+            dist/sifon-*-setup.exe
+            dist/sifon-*-windows-portable.zip
+            dist/SHA256SUMS.txt
+          retention-days: 7

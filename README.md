@@ -9,7 +9,36 @@ Descargador local de video y audio para Windows. Pegás el enlace de un video, e
 - No inicia sesión en ningún sitio: los videos privados o con edad restringida no se pueden bajar.
 - Bajá solo contenido sobre el que tengas derecho a hacerlo y respetá los términos de cada sitio.
 
-## Requisitos
+## Descargar e instalar (recomendado)
+
+No hace falta instalar Python, FFmpeg ni nada más: **todo viene incluido**. Entrá a [Releases](https://github.com/HAC97/Tifon/releases/latest) y bajá uno de estos archivos:
+
+| Archivo | Para quién |
+|---|---|
+| `sifon-<versión>-setup.exe` | **La mayoría.** Instalador: no pide permisos de administrador, crea un acceso en el menú Inicio y se desinstala desde *Configuración > Aplicaciones*. |
+| `sifon-<versión>-windows-portable.zip` | Sin instalar: descomprimilo donde quieras y ejecutá `sifon.exe` (no se desinstala solo: borrá la carpeta y `%LOCALAPPDATA%\sifon`). |
+
+1. Ejecutá el instalador y seguí los pasos. Al terminar, sifón se inicia: aparece una ventana chica y se abre el navegador con la página.
+2. Pegá el enlace y descargá (ver [Usar](#usar)).
+3. La ventana chica muestra la dirección, deja abrir la página otra vez, buscar actualizaciones de yt-dlp y **Cerrar sifón**. Si la cerrás con descargas en curso, te avisa antes. Si abrís sifón de nuevo estando ya abierto, solo te muestra la página.
+
+**Aviso de Windows (SmartScreen).** El instalador **no está firmado digitalmente** (la firma requiere un certificado pago), así que Windows puede mostrar "Windows protegió su PC" o "Editor desconocido". Para continuar: **Más información > Ejecutar de todas formas**. Podés comprobar que el archivo es el publicado: cada release incluye `SHA256SUMS.txt` y se compara con `Get-FileHash .\sifon-<versión>-setup.exe -Algorithm SHA256`. Los archivos los construye automáticamente el flujo [`release.yml`](.github/workflows/release.yml) a partir del código de este repositorio. Algún antivirus puede marcar por error un ejecutable nuevo y sin firmar: si pasa, abrí un reporte de problema.
+
+**Requisitos:** Windows de 64 bits. Probado en Windows 11; Windows 10 no está probado. El paquete pesa unos 100 MB y ocupa unos 300 MB instalado, porque trae FFmpeg y Deno.
+
+**Dónde guarda cosas:** el programa en `%LOCALAPPDATA%\Programs\sifon` (la carpeta que elijas en el instalador); registros, preferencias y actualizaciones de yt-dlp en `%LOCALAPPDATA%\sifon`; los archivos de trabajo, en la carpeta temporal (ver [Archivos temporales](#archivos-temporales)). Lo que descargás lo guarda tu navegador, en tu carpeta de descargas. Desinstalar borra el programa y `%LOCALAPPDATA%\sifon`, nunca tus descargas.
+
+**yt-dlp se actualiza solo.** yt-dlp se rompe cuando un sitio cambia; el paquete trae una versión y, una vez por día, sifón busca una más nueva en PyPI, la descarga, comprueba su hash SHA-256, la prueba en un proceso aparte y, si funciona, la usa **al reiniciar** (la ventana ofrece "Reiniciar para aplicar"). Si una actualización no arranca, se descarta y sigue la versión incluida. Se puede apagar con la casilla de la ventana o con la variable `SIFON_NO_AUTO_UPDATE=1`. Esto descarga y ejecuta código publicado en PyPI, con la misma confianza que `update.cmd` en el modo de código fuente.
+
+**Opciones de la línea de comandos** (opcionales): `sifon.exe --no-browser` (no abre el navegador), `--port 8765` (puerto fijo; por defecto el primero libre desde el 8000), `--no-window` (sin ventana de control; se cierra con `Ctrl+C`, o creando un archivo `stop.request` en `%LOCALAPPDATA%\sifon`).
+
+Si preferís trabajar con el código, o querés modificarlo, seguí con las secciones siguientes.
+
+## Usar desde el código fuente
+
+Alternativa para quien quiere el código: necesita instalar sus propias dependencias.
+
+### Requisitos
 
 | Qué | Versión | Obligatorio | Probado con |
 |---|---|---|---|
@@ -43,7 +72,7 @@ deno --version
 
 Si `py --version` falla pero `python --version` imprime una versión, también sirve. Si un comando dice que no se reconoce, ese programa no está en el `PATH`. `install.cmd` hace estas comprobaciones por vos y se detiene con un mensaje claro si falta algo obligatorio.
 
-## Descargar sifón
+### Descargar el código
 
 **Con ZIP** (no hace falta Git): en la página del repositorio en GitHub, botón verde **Code** → **Download ZIP**. Hacé clic derecho en el ZIP descargado → **Extraer todo…** y elegí una carpeta que puedas recordar (por ejemplo `C:\Users\vos\sifon`). Evitá carpetas dentro de OneDrive o del Escritorio sincronizado: el entorno virtual tiene miles de archivos chicos.
 
@@ -56,7 +85,7 @@ Después abrí una terminal **dentro de la carpeta del proyecto** (la que contie
 
 Para comprobar que estás en el lugar correcto, `dir` (o `ls`) tiene que mostrar `install.cmd`, `run.cmd` y `update.cmd`.
 
-## Instalar
+### Instalar
 
 ```powershell
 .\install.cmd
@@ -68,7 +97,7 @@ Para comprobar que estás en el lugar correcto, `dir` (o `ls`) tiene que mostrar
 
 Windows puede mostrar un aviso de SmartScreen al abrir un `.cmd` bajado de internet. Podés leer los scripts (son texto, en `scripts\`) antes de aceptar.
 
-## Iniciar
+### Iniciar
 
 ```powershell
 .\run.cmd
@@ -95,6 +124,8 @@ Si no pasás `-Port` y el 8000 está ocupado, prueba del 8001 al 8020 y te dice 
 ## Límites
 
 Para que una descarga no sature tu equipo, sifón impone límites. Se cambian con variables de entorno **antes** de iniciar (valen solo para esa ventana):
+
+Con el paquete de Windows, definilas como variables de entorno de tu usuario (*Inicio > "Editar las variables de entorno de esta cuenta"*) y reiniciá sifón, o ejecutá `sifon.exe` desde una terminal con la variable puesta.
 
 | Variable | Por defecto | Qué limita |
 |---|---|---|
@@ -126,6 +157,8 @@ Mientras se descarga y se convierte, sifón trabaja en una carpeta dentro de la 
 
 ## Actualizar yt-dlp
 
+*Solo para el modo código fuente: el paquete de Windows lo hace solo (ver arriba).*
+
 yt-dlp se rompe cuando un sitio cambia su página; la mayoría de los errores de "no se pudo descargar" se arreglan actualizándolo. Cerrá sifón y ejecutá:
 
 ```powershell
@@ -145,6 +178,8 @@ Actualiza `yt-dlp[default,curl-cffi]` (yt-dlp con `yt-dlp-ejs` y `curl-cffi`), c
 | "No se pudo descargar el video. Probá de nuevo o actualizá yt-dlp" | Ejecutá `update.cmd` y reiniciá. |
 | `LOGIN_REQUIRED` | El video es privado, de miembros o requiere edad: sifón no inicia sesión. |
 | `BLOCKED_ADDRESS` | El enlace (o una redirección) apunta a una dirección de red local; está bloqueado a propósito. |
+| Windows dice "Windows protegió su PC" al abrir el instalador | El instalador no está firmado. **Más información > Ejecutar de todas formas** (ver arriba cómo comprobar el hash). |
+| sifón no abre la página o se cierra solo (paquete) | Mirá `%LOCALAPPDATA%\sifon\logs\sifon.log` y `crash.log`, y abrí un reporte sin datos personales. |
 | PowerShell dice que la ejecución de scripts está deshabilitada | Usá los `.cmd` (`install.cmd`, `run.cmd`, `update.cmd`), que no dependen de esa configuración. |
 
 Si nada de esto ayuda, abrí un reporte con la plantilla de **Issues** del repositorio. Te pide las versiones y los pasos. **No adjuntes cookies, contraseñas, tokens ni enlaces privados.**
@@ -159,12 +194,13 @@ Detalles técnicos y cómo reportar una vulnerabilidad: [`services/downloader/RE
 
 ## Versiones probadas y limitaciones
 
-Probado el 2026-10-02 en Windows 11 Home (compilación 10.0.26300), con Python 3.12.10, FFmpeg/FFprobe 8.1.1 y 9.0.2, Deno 2.9.7, Node.js 24.13.1, yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0, curl-cffi 0.16.3 y FastAPI 0.142.2. Otras versiones de Python (3.10, 3.11, 3.13) y de Windows no se probaron. Los resultados de las pruebas y las limitaciones están en [`CHANGELOG.md`](CHANGELOG.md) y en [`docs/release-notes-v0.1.0.md`](docs/release-notes-v0.1.0.md).
+El paquete de Windows (v0.2.0) incluye Python 3.12.10, PyInstaller 6.22.3, FFmpeg/FFprobe n9.0.2 (compilación LGPL de BtbN) y Deno 2.9.7, además de yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0 y curl-cffi 0.16.3. Todo lo demás se probó el 2026-10-02 en Windows 11 Home (compilación 10.0.26300), con Python 3.12.10, FFmpeg/FFprobe 8.1.1 y 9.0.2, Deno 2.9.7, Node.js 24.13.1, yt-dlp 2026.08.19, yt-dlp-ejs 0.8.0, curl-cffi 0.16.3 y FastAPI 0.142.2. Otras versiones de Python (3.10, 3.11, 3.13) y de Windows no se probaron. Los resultados de las pruebas y las limitaciones están en [`CHANGELOG.md`](CHANGELOG.md) y en [`docs/release-notes-v0.1.0.md`](docs/release-notes-v0.1.0.md).
 
 ## Estructura
 
 ```
-install.cmd, run.cmd, update.cmd   lanzadores (ejecutan scripts\*.ps1 sin cambiar la política de ejecución)
+packaging/                         PyInstaller, instalador (Inno Setup), pruebas del paquete
+install.cmd, run.cmd, update.cmd   lanzadores (modo código fuente) (ejecutan scripts\*.ps1 sin cambiar la política de ejecución)
 scripts/                           install.ps1, run.ps1, update-ytdlp.ps1, check_env.py, gen_contract.py
 contracts/api.openapi.json         contrato HTTP (generado)
 services/downloader/               backend, tests y evals (ver su README)
