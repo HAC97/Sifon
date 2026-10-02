@@ -10,6 +10,8 @@ Descargá solo contenido sobre el que tengas derecho a hacerlo y respetá los t�
 - Python 3 (probado con 3.12)
 - `ffmpeg` y `ffprobe` en el `PATH`
 
+Si falta `ffmpeg`, `/api/health` muestra `"ffmpeg": false` y las descargas fallan con el código `FFMPEG_MISSING`. Una forma de instalarlo en Windows es `winget install Gyan.FFmpeg` (sugerencia, no probada por el autor); después reiniciá la app.
+
 ## Instalación
 
 ```powershell
@@ -27,7 +29,7 @@ Si ya tenías un entorno viejo, volvé a correr el `pip install -r` de arriba: `
 .\scripts\run.ps1
 ```
 
-Abrí `http://127.0.0.1:8000`. Si el puerto 8000 ya está en uso en tu máquina, usá otro: `.\scripts\run.ps1 -Port 8765` (y abrí `http://127.0.0.1:8765`). El servidor escucha solo en `127.0.0.1`.
+Abrí `http://127.0.0.1:8000`. Si el puerto 8000 ya está en uso en tu máquina, usá otro: `.\scripts\run.ps1 -Port 8765` (y abrí `http://127.0.0.1:8765`). El autor solo corrió la app con `-Port 8765`; el puerto 8000 (el predeterminado) puede estar ocupado en tu máquina. El servidor escucha solo en `127.0.0.1` y rechaza pedidos con un `Host` u `Origin` que no sea local (ver la sección de seguridad en `services/downloader/README.md`).
 
 ## Actualizar yt-dlp
 
