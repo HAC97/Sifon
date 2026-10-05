@@ -3,7 +3,8 @@
 A case ends as one of four kinds:
   pass        the downloaded file checks out
   fail        a product failure (bad file, non-NETWORK DownloadFailure, any other exception)
-  network     a DownloadFailure(NETWORK) or a timeout, after one retry; says nothing about the product
+  network     a DownloadFailure(NETWORK or LOGIN_REQUIRED) or a timeout, after one retry; says nothing
+              about the product (LOGIN_REQUIRED on a public URL is the site blocking this machine)
   known_dead  a case listed in KNOWN_DEAD_CASES; still run and printed, never counted
 
 rate    = pass / (pass + fail) over active cases (network and known_dead excluded)
@@ -39,9 +40,13 @@ KNOWN_DEAD_CASES = frozenset({(DEAD_VIMEO_URL, "video"), (DEAD_VIMEO_URL, "audio
 
 
 def classify_exception(exc: BaseException) -> str:
-    """NETWORK for a NETWORK DownloadFailure or a timeout, FAIL for everything else."""
+    """NETWORK for a NETWORK or LOGIN_REQUIRED DownloadFailure or a timeout, FAIL for everything else.
+
+    The eval URLs are public, so LOGIN_REQUIRED on them is the site refusing this machine (YouTube's
+    "confirm you're not a bot" on GitHub's datacenter IPs), not a product failure.
+    """
     if isinstance(exc, DownloadFailure):
-        return NETWORK if exc.code is ErrorCode.NETWORK else FAIL
+        return NETWORK if exc.code in (ErrorCode.NETWORK, ErrorCode.LOGIN_REQUIRED) else FAIL
     if isinstance(exc, (TimeoutError, subprocess.TimeoutExpired)):
         return NETWORK
     return FAIL

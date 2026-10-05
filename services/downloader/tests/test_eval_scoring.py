@@ -31,13 +31,27 @@ def results_of(**counts):
 # classification
 
 
-def test_network_download_failure_is_network():
-    assert classify_exception(DownloadFailure(ErrorCode.NETWORK)) == NETWORK
+ENVIRONMENT_CODES = (ErrorCode.NETWORK, ErrorCode.LOGIN_REQUIRED)
 
 
-@pytest.mark.parametrize("code", [c for c in ErrorCode if c is not ErrorCode.NETWORK])
+@pytest.mark.parametrize("code", ENVIRONMENT_CODES)
+def test_environment_download_failures_are_network(code):
+    # LOGIN_REQUIRED is YouTube's bot check on CI IPs (weekly run 2026-10-05: 4 of 9 active cases
+    # were scored FAIL and the rate dropped to 56%).
+    assert classify_exception(DownloadFailure(code)) == NETWORK
+
+
+@pytest.mark.parametrize("code", [c for c in ErrorCode if c not in ENVIRONMENT_CODES])
 def test_other_download_failures_are_product_failures(code):
     assert classify_exception(DownloadFailure(code)) == FAIL
+
+
+def test_ci_run_of_2026_10_05_is_inconclusive_not_a_product_failure():
+    # 4 YouTube cases blocked by the bot check, 5 passing: used to be FAIL at 56%.
+    blocked = [classify_exception(DownloadFailure(ErrorCode.LOGIN_REQUIRED)) for _ in range(4)]
+    s = summarize([{"kind": k, "promote": False} for k in blocked + [PASS] * 5])
+    assert s.counts[FAIL] == 0
+    assert s.verdict == VERDICT_INCONCLUSIVE
 
 
 @pytest.mark.parametrize(
