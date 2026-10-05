@@ -64,7 +64,7 @@ Cada uno de los 11 casos termina en uno de cuatro tipos, y se imprimen todos:
 
 - `PASS`: el archivo es válido (ffprobe, códec y duración).
 - `FAIL`: falla del producto (archivo incorrecto, un error que no es de red, cualquier otra excepción).
-- `NETWORK`: error de red o timeout. Se reintenta una vez; si vuelve a fallar, se registra así.
+- `NETWORK`: error de red, timeout o `LOGIN_REQUIRED`. Se reintenta una vez; si vuelve a fallar, se registra así. Las URLs del eval son públicas, así que un login ahí es el sitio bloqueando a esa máquina (el "confirm you're not a bot" de YouTube en las IPs de GitHub Actions), no una falla del producto.
 - `KNOWN_DEAD`: los dos casos de Vimeo (el video ya no existe y los demás piden login). Se corren y se imprimen, pero no cuentan. Si uno pasa, el eval imprime `PROMOTE` y falla para que lo muevas de vuelta a los casos activos.
 
 Tasa = `PASS / (PASS + FAIL)` sobre los casos activos (`NETWORK` y `KNOWN_DEAD` no cuentan). Si los `NETWORK` son más del 25% de los casos activos, el veredicto es `INCONCLUSIVE` y el eval falla con un mensaje claro (nunca pasa en silencio ni se saltea). Si no, pasa cuando la tasa es de al menos 80%. El puntaje de cada caso queda en `evals/results/last_run.json` (ignorado por git), con su `kind`. URLs y cómo se verificaron: `evals/URL_VERIFICATION.md`. Los resultados por versión están en `CHANGELOG.md`.
