@@ -4,6 +4,7 @@
   --ink: #15171e;
   --muted: #5b6070;
   --line: #d5d9e2;
+  --edge: #767b8a; /* border of a control: 3:1 against both the page and the card */
   --accent: #6a4cff;
   --accent-ink: #ffffff;
   --accent-soft: #a493ff;
@@ -21,6 +22,7 @@
     --ink: #eceef4;
     --muted: #a0a6b8;
     --line: #2a2f3d;
+    --edge: #6b7287;
     --accent: #9a86ff;
     --accent-ink: #12131a;
     --accent-soft: #c3b8ff;
@@ -72,7 +74,7 @@ h1 {
   gap: 8px;
   padding: 8px;
   background: var(--surface);
-  border: 2px solid var(--line);
+  border: 2px solid var(--edge);
   border-radius: 20px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -93,9 +95,8 @@ h1 {
 }
 .drop input::placeholder { color: var(--muted); }
 
-/* once the video is found the link is fixed: nothing to type, just the x to start over */
-.drop.locked,
-.drop.locked:focus-within { border-color: var(--line); box-shadow: none; }
+/* once the video is found the link is fixed: nothing to type, just the x to start over.
+   The field stays focusable (to select and copy the link), so it keeps its focus ring. */
 .drop.locked input { cursor: default; text-overflow: ellipsis; }
 
 .icon-btn {
@@ -127,7 +128,7 @@ h1 {
   transition: transform 0.1s, opacity 0.15s, background 0.15s;
 }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
-.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--edge); }
 .btn.wide { width: 100%; padding: 14px 18px; }
 .btn:hover:not(:disabled) { transform: translateY(-1px); }
 .btn:disabled { opacity: 0.5; cursor: progress; }
@@ -188,7 +189,7 @@ h1 {
   display: inline-flex;
   padding: 4px;
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 14px;
 }
 .seg label { position: relative; cursor: pointer; }
@@ -204,7 +205,8 @@ h1 {
 .seg label:has(input:checked) span {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(10, 12, 24, 0.2);
+  /* the ring is the cue that does not depend on telling two greys apart */
+  box-shadow: inset 0 0 0 2px var(--accent), 0 1px 3px rgba(10, 12, 24, 0.2);
 }
 .seg label:has(input:focus-visible) span { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -212,7 +214,7 @@ h1 {
 .field select {
   padding: 9px 12px;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 12px;
   color: var(--ink);
   font: inherit;
@@ -235,7 +237,7 @@ h1 {
 progress {
   width: 100%;
   height: 12px;
-  border: 0;
+  border: 1px solid var(--edge);
   border-radius: 999px;
   overflow: hidden;
   appearance: none;
@@ -277,6 +279,14 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 @media (prefers-reduced-motion: reduce) {
   .card { animation: none; }
   .btn, .icon-btn, .drop, .seg span, progress::-webkit-progress-value { transition: none; }
+}
+
+/* Windows high contrast: backgrounds, shadows and the accent colour are replaced by system
+   colours, so the focus and the selected option need an outline to stay visible. */
+@media (forced-colors: active) {
+  .drop:focus-within { outline: 3px solid Highlight; outline-offset: 2px; }
+  .seg label:has(input:checked) span { outline: 2px solid Highlight; outline-offset: -2px; }
+  .seg label:has(input:focus-visible) span { outline: 3px solid Highlight; outline-offset: 2px; }
 }
 
 @media (max-width: 520px) {

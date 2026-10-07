@@ -13,6 +13,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado
 
 - El repositorio pasó a llamarse `HAC97/Sifon`: URLs actualizadas.
 
+### Corregido
+
+- Página web, accesibilidad (auditoría en `anti-slop/audit-001-2026-10-07.md`):
+  - Con el enlace ya fijado, el campo vuelve a mostrar el anillo de foco.
+  - El foco ya no se pierde cuando desaparece o se deshabilita el botón que lo tenía: al encontrar el video pasa al título (y un lector de pantalla lo lee), al descargar pasa a «Cancelar descarga» y al terminar a «Descargar otra vez» o «Descargar»; si la búsqueda falla vuelve al campo.
+  - Los bordes de los controles (barra, selector, Video/Solo audio, botones, progreso) suben a 3:1 de contraste en claro y oscuro (`--edge`); la opción elegida de Video/Solo audio lleva además un aro de color.
+  - En modo de contraste alto de Windows se siguen viendo el foco de la barra y la opción elegida.
+  - Tests: contraste de los colores del CSS (`test_web.py`) y foco/contraste alto en el navegador (`tests/e2e/test_ui_smoke.py`).
+
 ## [0.2.0] - sin fecha (pendiente de etiquetar)
 
 Primera versión con **ejecutable para Windows**: se baja el instalador desde Releases y no hace falta instalar nada más.
