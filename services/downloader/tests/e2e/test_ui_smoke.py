@@ -305,3 +305,97 @@ def test_cancel_button_stops_a_running_download_and_frees_the_page(server, page)
     assert not page.is_visible("#error")
     assert page.is_enabled("#download") and page.is_enabled("#clear")
     assert not page.is_visible("#again")  # there is no file to offer again
+
+
+# --- keyboard focus, screen-reader announcement and high contrast (antislop audit 001) ---------
+
+
+def active_id(page):
+    return page.evaluate("document.activeElement.id")
+
+
+def test_focus_moves_to_the_title_when_the_video_is_found(server, page):
+    search(page, server)  # clicked Buscar, which then disappears
+    assert active_id(page) == "title"
+    assert page.get_attribute("#card", "aria-label")  # the region the title sits in has a name
+
+
+def test_focus_returns_to_the_field_when_the_search_fails(server, page):
+    page.goto(server)
+    page.fill("#url", "https://bad.example/v")
+    page.click("#fetch")
+    page.wait_for_selector("#error:not([hidden])")
+    assert active_id(page) == "url"
+
+
+def test_focus_follows_a_download_to_cancel_and_back_to_the_next_action(server, page):
+    page.goto(server)
+    page.fill("#url", "https://hang.example/v")
+    page.click("#fetch")
+    page.wait_for_selector("#card:not([hidden])")
+    page.focus("#download")
+    page.keyboard.press("Enter")
+    page.wait_for_selector("#cancel:not([hidden])")
+    assert active_id(page) == "cancel"  # Descargar was disabled under the keyboard user
+
+    page.keyboard.press("Enter")  # cancel with the keyboard alone
+    page.wait_for_function("document.getElementById('status').textContent.includes('cancelada')")
+    assert active_id(page) == "download"
+
+
+def test_focus_lands_on_download_again_after_a_finished_download(server, page):
+    search(page, server)
+    with page.expect_download(timeout=10000):
+        page.click("#download")
+    page.wait_for_selector("#again:not([hidden])")
+    assert active_id(page) == "again"
+
+
+def test_focus_goes_to_download_when_the_job_fails(server, page):
+    page.goto(server)
+    page.fill("#url", "https://fail.example/v")
+    page.click("#fetch")
+    page.wait_for_selector("#card:not([hidden])")
+    page.click("#download")
+    page.wait_for_selector("#error:not([hidden])")
+    assert active_id(page) == "download"
+
+
+def test_the_fixed_link_shows_a_focus_ring_when_it_has_the_focus(server, page):
+    search(page, server)
+    assert page.eval_on_selector("#url", "e => e.readOnly")
+    page.focus("#url")
+    page.wait_for_timeout(400)  # the border colour eases over 0.15 s: read it after it settled
+    # outline:none on the input is only acceptable because the bar around it draws the ring
+    assert page.eval_on_selector("#url-form", "e => getComputedStyle(e).boxShadow") != "none"
+    accent = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()")
+    ring = page.eval_on_selector("#url-form", "e => getComputedStyle(e).borderTopColor")
+    assert ring == page.evaluate("(c) => { const e = document.createElement('i'); e.style.color = c; "
+                                 "document.body.append(e); const v = getComputedStyle(e).color; e.remove(); return v; }",
+                                 accent)
+
+
+def test_the_selected_mode_has_a_cue_that_is_not_only_a_shade_of_grey(server, page):
+    search(page, server)
+    selected = "label:has(input:checked) span"
+    plain = "label:has(input:not(:checked)) span"
+    assert "inset" in page.eval_on_selector(f".seg {selected}", "e => getComputedStyle(e).boxShadow")
+    assert page.eval_on_selector(f".seg {plain}", "e => getComputedStyle(e).boxShadow") == "none"
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_high_contrast_mode_keeps_focus_and_selection_visible(server, page, scheme):
+    page.emulate_media(forced_colors="active", color_scheme=scheme)
+    search(page, server)
+    page.focus("#url")
+    outline = page.eval_on_selector("#url-form", "e => { const s = getComputedStyle(e); return [s.outlineStyle, s.outlineWidth]; }")
+    assert outline == ["solid", "3px"]
+    selected = page.eval_on_selector(".seg label:has(input:checked) span",
+                                     "e => { const s = getComputedStyle(e); return [s.outlineStyle, s.outlineWidth]; }")
+    assert selected == ["solid", "2px"]
+    page.check('input[value="audio"]')
+    page.keyboard.press("Tab")  # leave the radio group, then come back to it with the keyboard
+    page.keyboard.press("Shift+Tab")
+    focused = page.eval_on_selector(".seg label:has(input:checked) span",
+                                    "e => { const s = getComputedStyle(e); return [s.outlineStyle, s.outlineWidth]; }")
+    assert focused == ["solid", "3px"]

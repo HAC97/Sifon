@@ -66,3 +66,67 @@ def test_mode_radios_and_status_region_stay_accessible():
     assert re.search(r'id="status"[^>]*role="status"', page)
     assert re.search(r'<progress[^>]*aria-label="[^"]+"', page)
     assert re.search(r'id="error"[^>]*role="alert"', page)
+
+
+# --- contrast of the colours in style.css (WCAG 2.x), both themes ---------------------------------
+# A control's border, the focus ring and the progress outline need 3:1 (non-text); text needs 4.5:1.
+# `--line` is only for dividers and the card edge, so it is deliberately not asserted.
+
+
+def _tokens(block):
+    return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})", block))
+
+
+def _themes():
+    css = (WEB_DIR / "style.css").read_text(encoding="utf-8")
+    light = _tokens(re.search(r":root\s*\{(.*?)\}", css, re.S).group(1))
+    dark_block = re.search(r"prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{(.*?)\}", css, re.S).group(1)
+    return {"light": light, "dark": {**light, **_tokens(dark_block)}}
+
+
+def _luminance(color):
+    channels = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    r, g, b = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a, b):
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_control_borders_and_focus_colours_reach_3_to_1(theme):
+    t = _themes()[theme]
+    for foreground in ("edge", "accent"):
+        for background in ("bg", "surface"):
+            ratio = contrast(t[foreground], t[background])
+            assert ratio >= 3, f"{theme}: --{foreground} on --{background} is {ratio:.2f}:1, needs 3:1"
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_text_colours_reach_4_5_to_1(theme):
+    t = _themes()[theme]
+    pairs = [("ink", "bg"), ("ink", "surface"), ("muted", "bg"), ("muted", "surface"),
+             ("accent-ink", "accent"), ("danger", "danger-bg")]
+    for foreground, background in pairs:
+        ratio = contrast(t[foreground], t[background])
+        assert ratio >= 4.5, f"{theme}: --{foreground} on --{background} is {ratio:.2f}:1, needs 4.5:1"
+
+
+def test_controls_use_the_edge_colour_not_the_divider_colour():
+    css = (WEB_DIR / "style.css").read_text(encoding="utf-8")
+    for selector in (r"\.drop", r"\.btn\.ghost", r"\.seg", r"\.field select", r"progress"):
+        rule = re.search(r"(?m)^" + selector + r"\s*\{[^}]*\}", css)
+        assert rule and "var(--edge)" in rule.group(0), f"{selector} must draw its border with --edge"
+
+
+def test_forced_colors_keeps_the_focus_and_the_selected_option_visible():
+    css = (WEB_DIR / "style.css").read_text(encoding="utf-8")
+    block = re.search(r"@media \(forced-colors: active\)\s*\{(.*?)\n\}", css, re.S).group(1)
+    assert ".drop:focus-within" in block and "outline" in block
+    assert "input:checked" in block and "input:focus-visible" in block
+
+
+def test_title_can_receive_focus_so_the_result_is_announced():
+    assert '<h2 id="title" tabindex="-1">' in html()

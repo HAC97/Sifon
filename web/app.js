@@ -55,6 +55,13 @@ function formatSpeed(bytesPerSecond) {
   return `${(bytesPerSecond / 1048576).toFixed(1)} MB/s`;
 }
 
+// Focus is lost when the control that had it was hidden or disabled under the user's fingers:
+// a keyboard user is then back at the top of the page and a screen reader says nothing.
+function focusLost() {
+  const active = document.activeElement;
+  return !active || active === document.body || active.disabled || active.closest("[hidden]") !== null;
+}
+
 function setBusy(busy) {
   $("fetch").disabled = busy;
   $("paste").disabled = busy;
@@ -168,6 +175,9 @@ function renderInfo(info) {
   show($("again"), false);
   show($("card"), true);
   setLocked(true);
+  // Search and Paste just disappeared. Landing on the title also makes a screen reader read
+  // the result, which otherwise appears without any announcement.
+  $("title").focus();
 }
 
 function triggerDownload(jobId) {
@@ -182,6 +192,7 @@ function triggerDownload(jobId) {
 async function pollJob(jobId) {
   activeJobId = jobId;
   show($("cancel"), true);
+  if (focusLost()) $("cancel").focus(); // Descargar was disabled while it had the focus
   try {
     await pollUntilFinished(jobId);
   } finally {
@@ -232,6 +243,7 @@ $("url-form").addEventListener("submit", async (event) => {
   } finally {
     setBusy(false);
     $("fetch").textContent = "Buscar";
+    if (focusLost()) $("url").focus(); // the search failed: back to the field to fix the link
   }
 });
 
@@ -274,6 +286,7 @@ $("cancel").addEventListener("click", async () => {
     showError(error.message);
   } finally {
     $("cancel").disabled = false;
+    if (focusLost() && !$("cancel").hidden) $("cancel").focus();
   }
 });
 
@@ -300,5 +313,7 @@ $("download").addEventListener("click", async () => {
     show($("progress"), false);
   } finally {
     setBusy(false);
+    // Cancelar is hidden by now: hand the focus to the next thing the person can do.
+    if (focusLost()) ($("again").hidden ? $("download") : $("again")).focus();
   }
 });
